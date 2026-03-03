@@ -65,6 +65,8 @@ struct MenuContentView: View {
                     _ = ProcessActions.openNewCodexCLITerminal()
                 }
 
+                Divider()
+
                 MenuActionRowButton(
                     title: appState.isAddingOAuthProfile ? "Adding Account..." : "Add Account",
                     systemImage: "person.badge.plus",
@@ -138,9 +140,6 @@ struct MenuContentView: View {
                                 .foregroundStyle(isActive ? .primary : .secondary)
                                 .opacity(isActive ? 1.0 : 0.85)
                                 .lineLimit(1)
-                            Image(systemName: "chevron.down")
-                                .font(.system(size: 9, weight: .semibold))
-                                .foregroundStyle(.tertiary)
                         }
                     }
                     .menuStyle(.borderlessButton)
