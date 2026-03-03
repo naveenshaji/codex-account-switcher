@@ -31,6 +31,7 @@ struct MenuContentView: View {
     @Bindable var appState: AppState
     @Environment(\.openWindow) private var openWindow
     @State private var showRestartHint = false
+    @State private var isCodexRunning = ProcessActions.isCodexDesktopRunning()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -61,8 +62,12 @@ struct MenuContentView: View {
             }
 
             VStack(spacing: 2) {
-                MenuActionRowButton(title: "Restart Codex App", systemImage: "arrow.clockwise") {
+                MenuActionRowButton(
+                    title: isCodexRunning ? "Restart Codex App" : "Start Codex App",
+                    systemImage: isCodexRunning ? "arrow.clockwise" : "play.fill"
+                ) {
                     _ = ProcessActions.restartCodexDesktopApp()
+                    refreshCodexRunningState(afterDelay: 0.8)
                 }
 
                 MenuActionRowButton(title: "New CLI Session", systemImage: "terminal") {
@@ -88,6 +93,9 @@ struct MenuContentView: View {
         }
         .padding(.horizontal, 12)
         .animation(.easeInOut(duration: 0.2), value: showRestartHint)
+        .onAppear {
+            refreshCodexRunningState()
+        }
         .onDisappear {
             showRestartHint = false
         }
@@ -111,6 +119,16 @@ struct MenuContentView: View {
 
             NSApplication.shared.activate(ignoringOtherApps: true)
             NSRunningApplication.current.activate(options: [.activateAllWindows])
+        }
+    }
+
+    private func refreshCodexRunningState(afterDelay seconds: Double = 0) {
+        Task { @MainActor in
+            if seconds > 0 {
+                let nanoseconds = UInt64(seconds * 1_000_000_000)
+                try? await Task.sleep(nanoseconds: nanoseconds)
+            }
+            isCodexRunning = ProcessActions.isCodexDesktopRunning()
         }
     }
 
@@ -153,6 +171,7 @@ struct ManageAccountsView: View {
 
     @State private var showingAddSheet = false
     @State private var selectedProfileID: UUID?
+    @State private var isCodexRunning = ProcessActions.isCodexDesktopRunning()
 
     var body: some View {
         HStack(spacing: 0) {
@@ -221,8 +240,9 @@ struct ManageAccountsView: View {
 
                 Divider()
 
-                Button("Restart Codex desktop app") {
+                Button(isCodexRunning ? "Restart Codex desktop app" : "Start Codex desktop app") {
                     _ = ProcessActions.restartCodexDesktopApp()
+                    refreshCodexRunningState(afterDelay: 0.8)
                 }
 
                 Button("Open new Codex CLI terminal") {
@@ -255,6 +275,19 @@ struct ManageAccountsView: View {
             window.identifier = manageWindowIdentifier
             window.collectionBehavior.insert(.moveToActiveSpace)
         })
+        .onAppear {
+            refreshCodexRunningState()
+        }
+    }
+
+    private func refreshCodexRunningState(afterDelay seconds: Double = 0) {
+        Task { @MainActor in
+            if seconds > 0 {
+                let nanoseconds = UInt64(seconds * 1_000_000_000)
+                try? await Task.sleep(nanoseconds: nanoseconds)
+            }
+            isCodexRunning = ProcessActions.isCodexDesktopRunning()
+        }
     }
 }
 

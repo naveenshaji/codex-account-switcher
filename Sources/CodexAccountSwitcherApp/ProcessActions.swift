@@ -1,11 +1,37 @@
+import AppKit
 import Foundation
 
 enum ProcessActions {
+    static func isCodexDesktopRunning() -> Bool {
+        let knownBundleIDs: Set<String> = [
+            "com.openai.codex",
+            "com.openai.chatgpt.codex",
+            "com.openai.chatgpt"
+        ]
+
+        return NSWorkspace.shared.runningApplications.contains { app in
+            if let bundleID = app.bundleIdentifier,
+               knownBundleIDs.contains(bundleID) {
+                return true
+            }
+            return app.localizedName == "Codex"
+        }
+    }
+
+    @discardableResult
+    static func startCodexDesktopApp() -> Int32 {
+        run("/usr/bin/open", ["-a", "Codex"])
+    }
+
     @discardableResult
     static func restartCodexDesktopApp() -> Int32 {
+        if !isCodexDesktopRunning() {
+            return startCodexDesktopApp()
+        }
+
         _ = run("/usr/bin/osascript", ["-e", "tell application \"Codex\" to quit"])
         usleep(700_000)
-        return run("/usr/bin/open", ["-a", "Codex"])
+        return startCodexDesktopApp()
     }
 
     @discardableResult
