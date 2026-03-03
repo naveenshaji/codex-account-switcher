@@ -65,25 +65,20 @@ struct MenuContentView: View {
                     _ = ProcessActions.openNewCodexCLITerminal()
                 }
 
-                Menu {
-                    Button(appState.isAddingOAuthProfile ? "Adding account..." : "Add account via ChatGPT OAuth") {
-                        Task { await appState.addProfileViaOAuth() }
-                    }
-                    .disabled(appState.isAddingOAuthProfile)
-
-                    Divider()
-
-                    Toggle(
-                        "Open automatically at startup",
-                        isOn: Binding(
-                            get: { appState.openAtLoginEnabled },
-                            set: { appState.setOpenAtLoginEnabled($0) }
-                        )
-                    )
-                } label: {
-                    MenuActionRowLabel(title: "Settings", systemImage: "gearshape")
+                MenuActionRowButton(
+                    title: appState.isAddingOAuthProfile ? "Adding Account..." : "Add Account",
+                    systemImage: "person.badge.plus",
+                    isDisabled: appState.isAddingOAuthProfile
+                ) {
+                    Task { await appState.addProfileViaOAuth() }
                 }
-                .menuStyle(.borderlessButton)
+
+                MenuToggleRowButton(
+                    title: "Open Automatically at Startup",
+                    isOn: appState.openAtLoginEnabled
+                ) {
+                    appState.setOpenAtLoginEnabled(!appState.openAtLoginEnabled)
+                }
             }
 
             if showRestartHint {
@@ -131,12 +126,25 @@ struct MenuContentView: View {
 
         VStack(alignment: .leading, spacing: 6) {
             HStack {
-                HStack(spacing: 6) {
-                    Text(profile.displayEmail)
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(isActive ? .primary : .secondary)
-                        .opacity(isActive ? 1.0 : 0.85)
-                        .lineLimit(1)
+                HStack(spacing: 7) {
+                    Menu {
+                        Button("Remove Account", role: .destructive) {
+                            appState.deleteProfile(id: profile.id)
+                        }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Text(profile.displayEmail)
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(isActive ? .primary : .secondary)
+                                .opacity(isActive ? 1.0 : 0.85)
+                                .lineLimit(1)
+                            Image(systemName: "chevron.down")
+                                .font(.system(size: 9, weight: .semibold))
+                                .foregroundStyle(.tertiary)
+                        }
+                    }
+                    .menuStyle(.borderlessButton)
+                    .fixedSize(horizontal: false, vertical: true)
 
                     if let plan {
                         SubscriptionBadge(plan: plan)
@@ -157,10 +165,6 @@ struct MenuContentView: View {
                             }
                         }
                     )
-
-                    RowOverflowMenu {
-                        appState.deleteProfile(id: profile.id)
-                    }
                 }
             }
 
@@ -204,36 +208,10 @@ private struct ActiveAccountButton: View {
     }
 }
 
-private struct RowOverflowMenu: View {
-    let onRemove: () -> Void
-    @State private var isHovered = false
-
-    var body: some View {
-        Menu {
-            Button("Remove Account", role: .destructive, action: onRemove)
-        } label: {
-            Image(systemName: "ellipsis.circle")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(.secondary)
-                .padding(4)
-                .background(
-                    Circle()
-                        .fill(isHovered ? Color.secondary.opacity(0.18) : Color.clear)
-                )
-                .animation(.easeInOut(duration: 0.15), value: isHovered)
-        }
-        .menuStyle(.borderlessButton)
-        .fixedSize()
-        .onHover { hovering in
-            isHovered = hovering
-        }
-        .help("More actions")
-    }
-}
-
 private struct MenuActionRowButton: View {
     let title: String
     let systemImage: String
+    var isDisabled = false
     let action: () -> Void
     @State private var isHovered = false
 
@@ -243,7 +221,42 @@ private struct MenuActionRowButton: View {
                 Image(systemName: systemImage)
                     .font(.system(size: 12, weight: .semibold))
                     .frame(width: 14)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(isDisabled ? .tertiary : .secondary)
+                Text(title)
+                    .font(.subheadline)
+                    .foregroundStyle(isDisabled ? .secondary : .primary)
+                Spacer()
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+            .contentShape(Rectangle())
+            .background(
+                RoundedRectangle(cornerRadius: 6)
+                    .fill((isHovered && !isDisabled) ? Color.secondary.opacity(0.14) : Color.clear)
+            )
+            .animation(.easeInOut(duration: 0.15), value: isHovered)
+        }
+        .buttonStyle(.plain)
+        .disabled(isDisabled)
+        .onHover { hovering in
+            isHovered = hovering
+        }
+    }
+}
+
+private struct MenuToggleRowButton: View {
+    let title: String
+    let isOn: Bool
+    let action: () -> Void
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                Image(systemName: isOn ? "checkmark" : "minus")
+                    .font(.system(size: 11, weight: .semibold))
+                    .frame(width: 14)
+                    .foregroundStyle(isOn ? Color.green : Color.secondary.opacity(0.6))
                 Text(title)
                     .font(.subheadline)
                     .foregroundStyle(.primary)
@@ -259,39 +272,6 @@ private struct MenuActionRowButton: View {
             .animation(.easeInOut(duration: 0.15), value: isHovered)
         }
         .buttonStyle(.plain)
-        .onHover { hovering in
-            isHovered = hovering
-        }
-    }
-}
-
-private struct MenuActionRowLabel: View {
-    let title: String
-    let systemImage: String
-    @State private var isHovered = false
-
-    var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: systemImage)
-                .font(.system(size: 12, weight: .semibold))
-                .frame(width: 14)
-                .foregroundStyle(.secondary)
-            Text(title)
-                .font(.subheadline)
-                .foregroundStyle(.primary)
-            Spacer()
-            Image(systemName: "chevron.right")
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(.tertiary)
-        }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 6)
-        .contentShape(Rectangle())
-        .background(
-            RoundedRectangle(cornerRadius: 6)
-                .fill(isHovered ? Color.secondary.opacity(0.14) : Color.clear)
-        )
-        .animation(.easeInOut(duration: 0.15), value: isHovered)
         .onHover { hovering in
             isHovered = hovering
         }

@@ -12,14 +12,14 @@ Codex (desktop + CLI) reads auth from `~/.codex/auth.json`. This app keeps multi
 - Add accounts via full ChatGPT OAuth login flow (`codex app-server` based).
 - One-click active account switch (rewrites `~/.codex/auth.json` atomically).
 - Per-account subscription badge beside account email.
-- Per-account overflow menu (3-dot) to remove account.
+- Email dropdown menu (chevron) per account with `Remove Account`.
 - Usage visualization per account:
   - 5-hour window
   - weekly window
   - shown as `% remaining` (green -> yellow -> red as remaining drops)
-- Settings submenu in menubar panel:
+- Top-level menu actions include:
   - Add account via ChatGPT OAuth
-  - Open automatically at startup (toggle)
+  - Open automatically at startup (toggle row)
 - Quick actions:
   - start/restart Codex desktop app (auto-adapts to running state)
   - open new Codex CLI terminal session
@@ -49,9 +49,9 @@ swift run CodexAccountSwitcherApp
 ## Usage
 
 1. Open the menu bar icon (`person.2.circle`).
-2. Add accounts from `Settings` -> `Add account via ChatGPT OAuth`.
+2. Add accounts from `Add Account`.
 3. Select an account as active from the account list.
-4. Use the account row 3-dot menu to remove an account when needed.
+4. Use the account email dropdown (chevron) to remove an account when needed.
 5. Restart Codex app and open a new CLI session for switched auth to take effect in running processes.
 
 ## How switching works
@@ -89,5 +89,5 @@ Sources/CodexAccountSwitcherApp/
   LaunchAtLoginManager.swift # startup toggle integration
   Models.swift            # profile + usage models
   UsageService.swift      # usage endpoint client
-  Views.swift             # menu bar UI (accounts, actions, settings submenu)
+  Views.swift             # menu bar UI (accounts + top-level actions)
 ```
