@@ -71,12 +71,12 @@ struct MenuContentView: View {
                 }
             }
 
-            HStack(spacing: 8) {
-                Button("Restart Codex App") {
+            VStack(spacing: 2) {
+                MenuActionRowButton(title: "Restart Codex App", systemImage: "arrow.clockwise") {
                     _ = ProcessActions.restartCodexDesktopApp()
                 }
 
-                Button("New CLI Session") {
+                MenuActionRowButton(title: "New CLI Session", systemImage: "terminal") {
                     _ = ProcessActions.openNewCodexCLITerminal()
                 }
             }
@@ -331,6 +331,41 @@ private struct ActiveAccountButton: View {
         .buttonStyle(.plain)
         .disabled(isDisabled || isActive)
         .help(isActive ? "Active account" : "Set as active account")
+    }
+}
+
+private struct MenuActionRowButton: View {
+    let title: String
+    let systemImage: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                Image(systemName: systemImage)
+                    .font(.system(size: 12, weight: .semibold))
+                    .frame(width: 14)
+                    .foregroundStyle(.secondary)
+                Text(title)
+                    .font(.subheadline)
+                    .foregroundStyle(.primary)
+                Spacer()
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(MenuRowButtonStyle())
+    }
+}
+
+private struct MenuRowButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .background(
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(configuration.isPressed ? Color.secondary.opacity(0.2) : Color.clear)
+            )
     }
 }
 
