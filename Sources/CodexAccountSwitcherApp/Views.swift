@@ -37,7 +37,7 @@ struct MenuContentView: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Text("Codex Accounts")
-                    .font(.headline)
+                    .font(.system(size: 13, weight: .medium))
                 Spacer()
                 HStack(spacing: 10) {
                     HoverIconButton(
@@ -435,10 +435,12 @@ private struct HoverIconButton: View {
             Group {
                 if isLoading {
                     ProgressView()
-                        .controlSize(.small)
+                        .controlSize(.mini)
+                        .frame(width: 12, height: 12)
                 } else {
                     Image(systemName: systemImage)
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(.system(size: 11.5, weight: .semibold))
+                        .frame(width: 12, height: 12)
                 }
             }
                 .foregroundStyle(isDisabled ? .tertiary : .secondary)
