@@ -66,7 +66,7 @@ struct MenuContentView: View {
                 }
 
                 Divider()
-                    .padding(.vertical, 4)
+                    .padding(.vertical, 6)
 
                 MenuActionRowButton(
                     title: appState.isAddingOAuthProfile ? "Adding Account..." : "Add Account",
