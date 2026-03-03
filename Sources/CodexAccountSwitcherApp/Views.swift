@@ -6,15 +6,29 @@ struct CodexAccountSwitcherApp: App {
     @State private var appState = AppState()
 
     var body: some Scene {
-        MenuBarExtra("Codex", systemImage: "person.2.circle") {
+        MenuBarExtra {
             MenuContentView(appState: appState)
                 .frame(minWidth: 340)
                 .padding(.vertical, 8)
                 .task {
                     await appState.refreshUsageForAllProfiles()
                 }
+        } label: {
+            MenuBarStatusIcon()
         }
         .menuBarExtraStyle(.window)
+    }
+}
+
+private struct MenuBarStatusIcon: View {
+    var body: some View {
+        ZStack {
+            Circle()
+                .stroke(.primary, lineWidth: 1.6)
+            Image(systemName: "arrow.left.arrow.right")
+                .font(.system(size: 10, weight: .black))
+        }
+        .frame(width: 18, height: 18)
     }
 }
 
