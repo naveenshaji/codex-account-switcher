@@ -91,8 +91,12 @@ final class AppState {
         saveProfiles()
     }
 
-    func setActiveProfile(id: UUID) {
-        guard let index = profiles.firstIndex(where: { $0.id == id }) else { return }
+    @discardableResult
+    func setActiveProfile(id: UUID) -> Bool {
+        guard let index = profiles.firstIndex(where: { $0.id == id }) else { return false }
+        if activeProfileID == id {
+            return true
+        }
 
         isSwitching = true
         defer { isSwitching = false }
@@ -105,8 +109,10 @@ final class AppState {
             try authStore.activate(profile: profile)
             activeProfileID = id
             saveProfiles()
+            return true
         } catch {
             lastErrorMessage = "Failed to switch profile: \(error.localizedDescription)"
+            return false
         }
     }
 

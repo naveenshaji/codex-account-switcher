@@ -30,6 +30,7 @@ struct CodexAccountSwitcherApp: App {
 struct MenuContentView: View {
     @Bindable var appState: AppState
     @Environment(\.openWindow) private var openWindow
+    @State private var showRestartHint = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -37,10 +38,26 @@ struct MenuContentView: View {
                 Text("Codex Accounts")
                     .font(.headline)
                 Spacer()
-                Button("Manage") {
-                    openManageWindow()
+                HStack(spacing: 10) {
+                    Button {
+                        Task { await appState.refreshUsageForAllProfiles() }
+                    } label: {
+                        Image(systemName: "arrow.clockwise")
+                            .font(.system(size: 12, weight: .semibold))
+                    }
+                    .buttonStyle(.plain)
+                    .help("Refresh usage")
+                    .disabled(appState.isRefreshingUsage)
+
+                    Button {
+                        openManageWindow()
+                    } label: {
+                        Image(systemName: "gearshape")
+                            .font(.system(size: 12, weight: .semibold))
+                    }
+                    .buttonStyle(.plain)
+                    .help("Manage accounts")
                 }
-                .buttonStyle(.link)
             }
 
             if appState.sortedProfiles.isEmpty {
@@ -55,13 +72,6 @@ struct MenuContentView: View {
             }
 
             HStack(spacing: 8) {
-                Button {
-                    Task { await appState.refreshUsageForAllProfiles() }
-                } label: {
-                    Text(appState.isRefreshingUsage ? "Refreshing..." : "Refresh Usage")
-                }
-                .disabled(appState.isRefreshingUsage)
-
                 Button("Restart Codex App") {
                     _ = ProcessActions.restartCodexDesktopApp()
                 }
@@ -69,6 +79,12 @@ struct MenuContentView: View {
                 Button("New CLI Session") {
                     _ = ProcessActions.openNewCodexCLITerminal()
                 }
+            }
+
+            if showRestartHint {
+                Text("Restart Codex app and open a new CLI session to apply the new active account.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
             }
 
             if let error = appState.lastErrorMessage {
@@ -79,6 +95,9 @@ struct MenuContentView: View {
             }
         }
         .padding(.horizontal, 12)
+        .onDisappear {
+            showRestartHint = false
+        }
     }
 
     private func openManageWindow() {
@@ -104,30 +123,36 @@ struct MenuContentView: View {
 
     @ViewBuilder
     private func profileMenuRow(_ profile: CodexAuthProfile) -> some View {
+        let isActive = appState.activeProfileID == profile.id
+
         VStack(alignment: .leading, spacing: 6) {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(profile.name)
                         .font(.subheadline.weight(.semibold))
-                    Text(profile.accountID)
+                    Text(profile.email ?? "No email")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
 
                 Spacer()
 
-                if appState.activeProfileID == profile.id {
-                    Text("Active")
-                        .font(.caption2.bold())
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(Color.green.opacity(0.2), in: Capsule())
-                } else {
-                    Button("Switch") {
-                        appState.setActiveProfile(id: profile.id)
-                    }
-                    .disabled(appState.isSwitching)
-                }
+                Toggle(
+                    "",
+                    isOn: Binding(
+                        get: { isActive },
+                        set: { isOn in
+                            guard isOn, !isActive else { return }
+                            if appState.setActiveProfile(id: profile.id) {
+                                showRestartHint = true
+                            }
+                        }
+                    )
+                )
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .disabled(appState.isSwitching)
+                .help(isActive ? "Active account" : "Set as active account")
             }
 
             UsageBarsView(usage: appState.usageByProfileID[profile.id])
@@ -155,19 +180,16 @@ struct ManageAccountsView: View {
 
                 List(selection: $selectedProfileID) {
                     ForEach(appState.sortedProfiles) { profile in
-                        let isActive = appState.activeProfileID == profile.id
                         AccountRowView(
                             profile: profile,
-                            isActive: isActive,
-                            usage: appState.usageByProfileID[profile.id]
+                            isActive: appState.activeProfileID == profile.id,
+                            usage: appState.usageByProfileID[profile.id],
+                            onSetActive: {
+                                _ = appState.setActiveProfile(id: profile.id)
+                            }
                         )
                         .tag(profile.id)
                         .contextMenu {
-                            if !isActive {
-                                Button("Set Active") {
-                                    appState.setActiveProfile(id: profile.id)
-                                }
-                            }
                             Button("Delete", role: .destructive) {
                                 appState.deleteProfile(id: profile.id)
                             }
@@ -202,18 +224,6 @@ struct ManageAccountsView: View {
 
                 if let selectedProfileID,
                    appState.profiles.contains(where: { $0.id == selectedProfileID }) {
-                    if appState.activeProfileID == selectedProfileID {
-                        Text("Selected account is Active")
-                            .font(.caption.weight(.semibold))
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 6)
-                            .background(Color.green.opacity(0.2), in: Capsule())
-                    } else {
-                        Button("Set selected account active") {
-                            appState.setActiveProfile(id: selectedProfileID)
-                        }
-                    }
-
                     Button("Delete selected account", role: .destructive) {
                         appState.deleteProfile(id: selectedProfileID)
                     }
@@ -284,6 +294,7 @@ struct AccountRowView: View {
     let profile: CodexAuthProfile
     let isActive: Bool
     let usage: UsageSnapshot?
+    let onSetActive: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -291,20 +302,25 @@ struct AccountRowView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(profile.name)
                         .font(.body.weight(.semibold))
-                    Text(profile.accountID)
+                    Text(profile.email ?? "No email")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
 
                 Spacer()
 
-                if isActive {
-                    Text("Active")
-                        .font(.caption2.bold())
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(.green.opacity(0.2), in: Capsule())
-                }
+                Toggle(
+                    "",
+                    isOn: Binding(
+                        get: { isActive },
+                        set: { isOn in
+                            guard isOn, !isActive else { return }
+                            onSetActive()
+                        }
+                    )
+                )
+                .labelsHidden()
+                .toggleStyle(.switch)
             }
 
             if let plan = profile.planType?.trimmedNilIfEmpty ?? usage?.planType?.trimmedNilIfEmpty {
@@ -338,23 +354,15 @@ struct UsageBarsView: View {
                 .frame(width: 44, alignment: .leading)
 
             if let window {
-                GeometryReader { geo in
-                    let width = max(geo.size.width, 1)
-                    let fill = width * (window.normalizedRemainingPercent / 100)
+                SegmentedUsageBar(
+                    percent: window.normalizedRemainingPercent,
+                    color: barColor(forRemaining: window.normalizedRemainingPercent)
+                )
+                .frame(height: 12)
 
-                    ZStack(alignment: .leading) {
-                        RoundedRectangle(cornerRadius: 5)
-                            .fill(.secondary.opacity(0.15))
-                        RoundedRectangle(cornerRadius: 5)
-                            .fill(barColor(forRemaining: window.normalizedRemainingPercent))
-                            .frame(width: fill)
-                    }
-                }
-                .frame(height: 9)
-
-                Text("\(Int(window.normalizedRemainingPercent.rounded()))% left")
+                Text("\(Int(window.normalizedRemainingPercent.rounded()))%")
                     .font(.caption2.monospacedDigit())
-                    .frame(width: 68, alignment: .trailing)
+                    .frame(width: 42, alignment: .trailing)
 
                 Text(resetText(for: window))
                     .font(.caption2)
@@ -385,9 +393,38 @@ struct UsageBarsView: View {
             return ""
         }
 
-        let relative = RelativeDateTimeFormatter()
-        relative.unitsStyle = .short
-        return "resets \(relative.localizedString(for: resetsAt, relativeTo: Date()))"
+        let interval = max(0, resetsAt.timeIntervalSinceNow)
+        if interval < 60 {
+            return "1m"
+        }
+
+        let formatter = DateComponentsFormatter()
+        formatter.unitsStyle = .abbreviated
+        formatter.maximumUnitCount = 1
+        formatter.allowedUnits = [.day, .hour, .minute]
+        formatter.zeroFormattingBehavior = .dropAll
+        return formatter.string(from: interval) ?? ""
+    }
+}
+
+private struct SegmentedUsageBar: View {
+    let percent: Double
+    let color: Color
+
+    private let segments = 20
+
+    private var filledSegments: Int {
+        let clamped = min(max(percent, 0), 100)
+        return Int((clamped / 5).rounded())
+    }
+
+    var body: some View {
+        HStack(spacing: 2) {
+            ForEach(0..<segments, id: \.self) { index in
+                RoundedRectangle(cornerRadius: 3)
+                    .fill(index < filledSegments ? color : .secondary.opacity(0.16))
+            }
+        }
     }
 }
 
