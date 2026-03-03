@@ -12,6 +12,8 @@ final class AppState {
     var profiles: [CodexAuthProfile] = []
     var activeProfileID: UUID?
     var usageByProfileID: [UUID: UsageSnapshot] = [:]
+    var usageErrorByProfileID: [UUID: String] = [:]
+    var actionErrorByProfileID: [UUID: String] = [:]
 
     var isRefreshingUsage = false
     var isSwitching = false
@@ -82,6 +84,8 @@ final class AppState {
     func deleteProfile(id: UUID) {
         profiles.removeAll { $0.id == id }
         usageByProfileID[id] = nil
+        usageErrorByProfileID[id] = nil
+        actionErrorByProfileID[id] = nil
 
         if activeProfileID == id {
             activeProfileID = profiles.first?.id
@@ -94,6 +98,7 @@ final class AppState {
     func setActiveProfile(id: UUID) -> Bool {
         guard let index = profiles.firstIndex(where: { $0.id == id }) else { return false }
         if activeProfileID == id {
+            actionErrorByProfileID[id] = nil
             return true
         }
 
@@ -107,10 +112,11 @@ final class AppState {
 
             try authStore.activate(profile: profile)
             activeProfileID = id
+            actionErrorByProfileID[id] = nil
             saveProfiles()
             return true
         } catch {
-            lastErrorMessage = "Failed to switch profile: \(error.localizedDescription)"
+            actionErrorByProfileID[id] = "Switch failed: \(error.localizedDescription)"
             return false
         }
     }
@@ -128,6 +134,12 @@ final class AppState {
 
     func clearError() {
         lastErrorMessage = nil
+    }
+
+    func clearTransientErrors() {
+        lastErrorMessage = nil
+        usageErrorByProfileID.removeAll()
+        actionErrorByProfileID.removeAll()
     }
 
     func refreshOpenAtLoginState() {
@@ -167,27 +179,20 @@ final class AppState {
                 }
             }
 
-            var firstError: String?
             for await (profileID, result) in group {
                 switch result {
                 case .success(let snapshot):
                     usageByProfileID[profileID] = snapshot
+                    usageErrorByProfileID[profileID] = nil
                     if let idx = profiles.firstIndex(where: { $0.id == profileID }),
                        profiles[idx].planType?.trimmedNilIfEmpty == nil {
                         profiles[idx].planType = snapshot.planType
                     }
                 case .failure(let error):
-                    if firstError == nil && !isCancellationError(error) {
-                        firstError = error.localizedDescription
+                    if !isCancellationError(error) {
+                        usageErrorByProfileID[profileID] = "Usage refresh failed: \(error.localizedDescription)"
                     }
                 }
-            }
-
-            if let firstError {
-                lastErrorMessage = "Some usage requests failed: \(firstError)"
-            } else if let lastErrorMessage,
-                      lastErrorMessage.hasPrefix("Some usage requests failed:") {
-                self.lastErrorMessage = nil
             }
         }
 

@@ -122,6 +122,7 @@ struct MenuContentView: View {
         }
         .onDisappear {
             showRestartHint = false
+            appState.clearTransientErrors()
         }
     }
 
@@ -183,6 +184,20 @@ struct MenuContentView: View {
             }
 
             UsageBarsView(usage: usage)
+
+            if let actionError = appState.actionErrorByProfileID[profile.id] {
+                Text(actionError)
+                    .font(.caption2)
+                    .foregroundStyle(.red)
+                    .lineLimit(2)
+            }
+
+            if let usageError = appState.usageErrorByProfileID[profile.id] {
+                Text(usageError)
+                    .font(.caption2)
+                    .foregroundStyle(.red)
+                    .lineLimit(2)
+            }
         }
         .padding(.vertical, 2)
         .animation(.easeInOut(duration: 0.2), value: isActive)

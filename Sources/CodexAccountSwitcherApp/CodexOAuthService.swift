@@ -86,10 +86,19 @@ struct CodexOAuthService {
             throw CodexOAuthError.failedToOpenAuthURL
         }
 
-        try await waitForLoginCompletion(session: rpc, expectedLoginID: login.loginID)
-
         let authPath = codexHome.appendingPathComponent("auth.json", isDirectory: false)
-        guard fileManager.fileExists(atPath: authPath.path) else {
+        do {
+            try await waitForLoginCompletion(session: rpc, expectedLoginID: login.loginID)
+        } catch {
+            // Some app-server flows report timeout/cancel even though auth.json is eventually written.
+            if await waitForAuthFile(at: authPath, timeoutSeconds: 6),
+               let imported = try? CodexAuthStore().importProfile(fromAuthFileURL: authPath) {
+                return imported
+            }
+            throw error
+        }
+
+        guard await waitForAuthFile(at: authPath, timeoutSeconds: 8) else {
             throw CodexOAuthError.authFileMissing
         }
 
@@ -167,6 +176,17 @@ struct CodexOAuthService {
         }
 
         throw CodexOAuthError.timedOut("OAuth completion")
+    }
+
+    private func waitForAuthFile(at path: URL, timeoutSeconds: TimeInterval) async -> Bool {
+        let deadline = Date().addingTimeInterval(timeoutSeconds)
+        while Date() < deadline {
+            if fileManager.fileExists(atPath: path.path) {
+                return true
+            }
+            try? await Task.sleep(nanoseconds: 200_000_000)
+        }
+        return fileManager.fileExists(atPath: path.path)
     }
 }
 
