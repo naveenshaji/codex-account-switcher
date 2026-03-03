@@ -1,0 +1,12 @@
+[
+  {
+    "body_markdown": "I built and open sourced a small macOS menu bar utility called **Codex Account Switcher**.\\n\\nIt\u2019s for people using Codex heavily across multiple accounts and getting tired of manually editing `~/.codex/auth.json`.\\n\\nWhat it does:\\n- Store multiple account profiles\\n- One-click active account switch\\n- Show remaining 5-hour + weekly usage windows per account\\n- Quick actions to restart Codex app / open new CLI session\\n\\nRepo: https://github.com/naveenshaji/codex-account-switcher\\n\\nHappy to share implementation details if useful.",
+    "community": "r/macapps",
+    "title": "[Open Source] Codex Account Switcher for macOS menu bar"
+  },
+  {
+    "body_markdown": "Launched a tiny OSS macOS utility: **Codex Account Switcher**.\\n\\nIt helps when you work across multiple Codex accounts and want faster switching + usage visibility without editing auth files manually.\\n\\nCurrent focus is practical workflow speed (switch account, check 5h/weekly remaining, restart app/open CLI quickly).\\n\\nRepo: https://github.com/naveenshaji/codex-account-switcher\\n\\nFeedback welcome, especially from people running long Codex sessions daily.",
+    "community": "r/SideProject",
+    "title": "I made an OSS tool to switch Codex accounts from the menu bar"
+  }
+]

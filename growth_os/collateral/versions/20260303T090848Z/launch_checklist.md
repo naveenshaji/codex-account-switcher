@@ -1,0 +1,5 @@
+- Pin/update project README screenshots and quick start
+- Publish launch post on X from maintainer account
+- Publish one Reddit launch post in a relevant allowed community
+- Monitor first 24h comments and respond with setup/security clarifications
+- Capture baseline metrics: stars, traffic, engagement

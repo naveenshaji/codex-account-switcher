@@ -1,0 +1,4 @@
+- Strengthened problem-first framing around auth file switching friction.
+- Added explicit security model bullets in landing copy.
+- Made social copy more concrete and less generic.
+- Focused Reddit post variants on feedback-seeking and implementation clarity.

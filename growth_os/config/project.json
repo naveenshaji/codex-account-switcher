@@ -1,0 +1,111 @@
+{
+  "channels": {
+    "reddit": {
+      "autopublish_posts": false,
+      "autopublish_replies": false,
+      "daily_post_cap": 2,
+      "daily_reply_cap": 20,
+      "enabled": true,
+      "min_minutes_between_posts": 120,
+      "min_minutes_between_replies": 10
+    },
+    "x": {
+      "autopublish_posts": false,
+      "autopublish_replies": false,
+      "daily_post_cap": 3,
+      "daily_reply_cap": 30,
+      "enabled": true,
+      "min_minutes_between_posts": 60,
+      "min_minutes_between_replies": 5
+    }
+  },
+  "cta_catalog": [
+    {
+      "id": "repo",
+      "label": "View source",
+      "type": "oss",
+      "url": ""
+    },
+    {
+      "id": "docs",
+      "label": "Read docs",
+      "type": "docs",
+      "url": ""
+    },
+    {
+      "id": "download",
+      "label": "Download",
+      "type": "distribution",
+      "url": ""
+    },
+    {
+      "id": "demo",
+      "label": "Watch demo",
+      "type": "content",
+      "url": ""
+    }
+  ],
+  "keyword_sets": {
+    "exclude": [
+      "hiring",
+      "job opening",
+      "referral",
+      "off-topic"
+    ],
+    "problem": [
+      "looking for",
+      "struggling with",
+      "need a tool",
+      "how do i",
+      "any recommendations"
+    ],
+    "solution": [
+      "workflow",
+      "automation",
+      "faster",
+      "reduce manual work"
+    ]
+  },
+  "messaging": {
+    "disclosure_template": "Maintainer note: I build {project_name}.",
+    "guardrails": [
+      "No unverifiable claims.",
+      "No fake urgency or scarcity.",
+      "Follow each community's self-promo rules."
+    ],
+    "proof_points": [],
+    "voice": "Direct, practical, proof-first."
+  },
+  "operations": {
+    "automation_enabled": false,
+    "llm_first": true,
+    "llm_provider": "agent_manual",
+    "mode": "manual"
+  },
+  "project": {
+    "homepage_url": "https://github.com/naveenshaji/codex-account-switcher",
+    "mode": "oss",
+    "name": "Codex Account Switcher",
+    "repo_url": "https://github.com/naveenshaji/codex-account-switcher",
+    "slug": "codex-account-switcher",
+    "summary": "Menu bar app for macOS to switch Codex ChatGPT accounts quickly and monitor remaining usage windows."
+  },
+  "publishing": {
+    "dedupe_by_content": true,
+    "dedupe_by_source_url": true,
+    "duplicate_window_hours": 72
+  },
+  "risk": {
+    "always_review_channels": [
+      "reddit"
+    ],
+    "high_risk_terms": [
+      "guarantee",
+      "legal advice",
+      "medical advice",
+      "double your money",
+      "zero risk"
+    ],
+    "review_threshold": 0.45
+  }
+}

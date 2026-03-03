@@ -1,0 +1,28 @@
+{
+  "website_landing_markdown": "# Codex Account Switcher\\n\\nA macOS menu bar app for people who run Codex heavily across multiple accounts.\\n\\n## Why it exists\\nSwitching accounts by editing `~/.codex/auth.json` manually is fragile and slow. This app keeps accounts ready and lets you switch active auth in one click.\\n\\n## What you get\\n- One-click active account switch\\n- Account add/remove from menu bar\\n- 5-hour + weekly remaining usage bars per account\\n- Quick actions to restart Codex desktop and open a new CLI session\\n\\n## Built for real Codex workflows\\nThe app is focused on operator speed, clear state, and predictable switching behavior.\\n\\n## Open source\\n- Repo: https://github.com/naveenshaji/codex-account-switcher\\n- Stack: SwiftUI + Swift Package Manager\\n\\n## Notes\\n- Existing sessions do not hot-reload auth; restart/new session is required after switch.\\n- Credentials are stored locally with restrictive permissions.\\n\\n## CTA\\n[View source on GitHub](https://github.com/naveenshaji/codex-account-switcher)",
+  "blog_post_markdown": "# Launch: Codex Account Switcher (Open Source)\\n\\nI built **Codex Account Switcher**, a macOS menu bar utility for people running Codex across multiple accounts.\\n\\n## The problem\\nIf you use Codex desktop + CLI heavily, account switching usually means manually editing `~/.codex/auth.json`, restarting tools, and keeping usage windows in your head.\\n\\n## What this tool changes\\n- Keep multiple accounts saved\\n- Switch active account with one click\\n- See remaining quota for 5-hour and weekly windows per account\\n- Trigger Codex app restart and new CLI session from the same menu\\n\\n## Why open source\\nAuth/account tooling should be inspectable. The repository is public so you can audit behavior and adapt it to your own workflow.\\n\\n## Current limitations\\n- Running sessions do not hot-reload auth\\n- Assumes file-backed auth (`~/.codex/auth.json`)\\n\\n## Try it\\n```bash\\ngit clone https://github.com/naveenshaji/codex-account-switcher.git\\ncd codex-account-switcher\\nswift run CodexAccountSwitcherApp\\n```\\n\\nIf you manage multiple Codex accounts daily, this should remove a lot of friction.\\n\\nRepo: https://github.com/naveenshaji/codex-account-switcher",
+  "x_posts": [
+    "I open sourced Codex Account Switcher: a macOS menu bar app to manage multiple Codex ChatGPT accounts, switch active auth in one click, and see 5h/weekly usage windows. Repo: https://github.com/naveenshaji/codex-account-switcher",
+    "If you’re manually editing ~/.codex/auth.json to switch accounts, this might help. Codex Account Switcher gives one-click switching + usage bars per account in the menu bar. OSS: https://github.com/naveenshaji/codex-account-switcher",
+    "Built a utility for heavy Codex workflows: add accounts via OAuth, pick active account, restart app/open CLI, and track remaining usage windows. Open source: https://github.com/naveenshaji/codex-account-switcher"
+  ],
+  "reddit_posts": [
+    {
+      "community": "r/macapps",
+      "title": "[Open Source] Codex Account Switcher for macOS menu bar",
+      "body_markdown": "I built and open sourced a small macOS menu bar utility called **Codex Account Switcher**.\\n\\nIt’s for people using Codex heavily across multiple accounts and getting tired of manually editing `~/.codex/auth.json`.\\n\\nWhat it does:\\n- Store multiple account profiles\\n- One-click active account switch\\n- Show remaining 5-hour + weekly usage windows per account\\n- Quick actions to restart Codex app / open new CLI session\\n\\nRepo: https://github.com/naveenshaji/codex-account-switcher\\n\\nHappy to share implementation details if useful."
+    },
+    {
+      "community": "r/SideProject",
+      "title": "I made an OSS tool to switch Codex accounts from the menu bar",
+      "body_markdown": "Launched a tiny OSS macOS utility: **Codex Account Switcher**.\\n\\nIt helps when you work across multiple Codex accounts and want faster switching + usage visibility without editing auth files manually.\\n\\nCurrent focus is practical workflow speed (switch account, check 5h/weekly remaining, restart app/open CLI quickly).\\n\\nRepo: https://github.com/naveenshaji/codex-account-switcher\\n\\nFeedback welcome, especially from people running long Codex sessions daily."
+    }
+  ],
+  "launch_checklist": [
+    "Pin/update project README screenshots and quick start",
+    "Publish launch post on X from maintainer account",
+    "Publish one Reddit launch post in a relevant allowed community",
+    "Monitor first 24h comments and respond with setup/security clarifications",
+    "Capture baseline metrics: stars, traffic, engagement"
+  ]
+}

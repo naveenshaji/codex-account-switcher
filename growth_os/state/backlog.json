@@ -1,0 +1,126 @@
+[
+  {
+    "candidate": {
+      "author": "dev_alpha",
+      "channel": "reddit",
+      "community": "r/ChatGPTCoding",
+      "created_at": "2026-03-03T08:00:00Z",
+      "engagement": 22.0,
+      "id": "reddit-89631f36f5b09806",
+      "text": "I keep editing ~/.codex/auth.json manually and it is annoying. Looking for a safer workflow.",
+      "title": "Any way to switch Codex accounts faster?",
+      "url": "https://www.reddit.com/r/ChatGPTCoding/comments/abc001/any_way_to_switch_codex_accounts_faster/"
+    },
+    "candidate_id": "reddit-89631f36f5b09806",
+    "discovered_at": "2026-03-03T09:09:19.107879+00:00",
+    "draft_id": "reply-reddit-reddit-89631f36f5b09806-20260303T090919Z",
+    "drafted_at": "2026-03-03T09:09:19.108741+00:00",
+    "queue": "review",
+    "run_id": "heartbeat-20260303T090919Z",
+    "score": 64.38,
+    "scoring": {
+      "age_hours": 1.16,
+      "engagement_score": 0.591,
+      "exclude_hits": 0.0,
+      "freshness_score": 0.984,
+      "keyword_score": 0.5,
+      "problem_hits": 1.0,
+      "score": 64.38,
+      "solution_hits": 2.0
+    },
+    "status": "drafted"
+  },
+  {
+    "candidate": {
+      "author": "swiftpilot",
+      "channel": "reddit",
+      "community": "r/macapps",
+      "created_at": "2026-03-03T07:50:00Z",
+      "engagement": 31.0,
+      "id": "reddit-cef1f048beb024a2",
+      "text": "Would love a menu bar utility for switching contexts across dev tools.",
+      "title": "Menu bar tools for developer workflows?",
+      "url": "https://www.reddit.com/r/macapps/comments/abc002/menu_bar_tools_for_developer_workflows/"
+    },
+    "candidate_id": "reddit-cef1f048beb024a2",
+    "discovered_at": "2026-03-03T09:09:19.107879+00:00",
+    "draft_id": "reply-reddit-reddit-cef1f048beb024a2-20260303T090919Z",
+    "drafted_at": "2026-03-03T09:09:19.108741+00:00",
+    "queue": "review",
+    "run_id": "heartbeat-20260303T090919Z",
+    "score": 47.13,
+    "scoring": {
+      "age_hours": 1.32,
+      "engagement_score": 0.654,
+      "exclude_hits": 0.0,
+      "freshness_score": 0.982,
+      "keyword_score": 0.125,
+      "problem_hits": 0.0,
+      "score": 47.13,
+      "solution_hits": 1.0
+    },
+    "status": "drafted"
+  },
+  {
+    "candidate": {
+      "author": "cli_ninja",
+      "channel": "x",
+      "community": "x/cli",
+      "created_at": "2026-03-03T08:20:00Z",
+      "engagement": 19.0,
+      "id": "x-e0918a48b303dbaa",
+      "text": "Need recommendations: account switching for Codex CLI without messing auth files.",
+      "title": "",
+      "url": "https://x.com/cli_ninja/status/1896500000000000002"
+    },
+    "candidate_id": "x-e0918a48b303dbaa",
+    "discovered_at": "2026-03-03T09:09:19.107879+00:00",
+    "draft_id": "reply-x-x-e0918a48b303dbaa-20260303T090919Z",
+    "drafted_at": "2026-03-03T09:09:19.108741+00:00",
+    "queue": "review",
+    "run_id": "heartbeat-20260303T090919Z",
+    "score": 38.84,
+    "scoring": {
+      "age_hours": 0.82,
+      "engagement_score": 0.565,
+      "exclude_hits": 0.0,
+      "freshness_score": 0.989,
+      "keyword_score": 0.0,
+      "problem_hits": 0.0,
+      "score": 38.84,
+      "solution_hits": 0.0
+    },
+    "status": "drafted"
+  },
+  {
+    "candidate": {
+      "author": "devopskai",
+      "channel": "x",
+      "community": "x/codex",
+      "created_at": "2026-03-03T08:15:00Z",
+      "engagement": 15.0,
+      "id": "x-6ed361c1e1c4463a",
+      "text": "Anyone has a clean setup for multiple Codex accounts on mac?",
+      "title": "",
+      "url": "https://x.com/devopskai/status/1896500000000000001"
+    },
+    "candidate_id": "x-6ed361c1e1c4463a",
+    "discovered_at": "2026-03-03T09:09:19.107879+00:00",
+    "draft_id": "reply-x-x-6ed361c1e1c4463a-20260303T090919Z",
+    "drafted_at": "2026-03-03T09:09:19.108741+00:00",
+    "queue": "review",
+    "run_id": "heartbeat-20260303T090919Z",
+    "score": 37.76,
+    "scoring": {
+      "age_hours": 0.91,
+      "engagement_score": 0.523,
+      "exclude_hits": 0.0,
+      "freshness_score": 0.987,
+      "keyword_score": 0.0,
+      "problem_hits": 0.0,
+      "score": 37.76,
+      "solution_hits": 0.0
+    },
+    "status": "drafted"
+  }
+]

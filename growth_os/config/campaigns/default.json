@@ -1,0 +1,27 @@
+{
+  "campaign_id": "default",
+  "content_pillars": [
+    "release update",
+    "tutorial",
+    "build in public"
+  ],
+  "cta": {
+    "id": "repo",
+    "label": "View source",
+    "success_event": "github_repo_visit",
+    "url": "https://github.com/naveenshaji/codex-account-switcher"
+  },
+  "notes": "Set CTA per campaign. Leave blank if this run should be educational-only.",
+  "objective": "awareness",
+  "post_policy": {
+    "enabled": true,
+    "max_per_day": 1
+  },
+  "reply_policy": {
+    "max_per_heartbeat": 8
+  },
+  "target_communities": {
+    "reddit": [],
+    "x": []
+  }
+}

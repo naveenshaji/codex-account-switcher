@@ -1,0 +1,22 @@
+[
+  {
+    "draft_id": "reply-reddit-reddit-89631f36f5b09806-20260303T090919Z",
+    "rewritten_content": "I ran into this exact issue and built a small macOS menu bar tool for it. It keeps multiple Codex accounts saved and switches the active one by writing `~/.codex/auth.json` atomically, plus shows remaining 5h/weekly usage per account.\n\nMaintainer note: I build Codex Account Switcher.\nRepo: https://github.com/naveenshaji/codex-account-switcher",
+    "rationale": "More specific workflow detail, clearer value, and explicit maintainer disclosure."
+  },
+  {
+    "draft_id": "reply-reddit-reddit-cef1f048beb024a2-20260303T090919Z",
+    "rewritten_content": "If you want a developer-focused menu bar utility, I built one for Codex account switching. It lets you switch active account quickly, view 5h/weekly remaining usage, and launch a new CLI session after switching.\n\nMaintainer note: I build Codex Account Switcher.\nRepo: https://github.com/naveenshaji/codex-account-switcher",
+    "rationale": "Matches the menu-bar-tools request and keeps tone practical without hype."
+  },
+  {
+    "draft_id": "reply-x-x-e0918a48b303dbaa-20260303T090919Z",
+    "rewritten_content": "I had the same pain point, so I built a small macOS menu bar switcher for Codex accounts. It avoids manual auth-file edits and shows remaining 5h/weekly usage per account.\nMaintainer note: I build it. Repo: https://github.com/naveenshaji/codex-account-switcher",
+    "rationale": "Shorter X-friendly wording with concrete utility and disclosure."
+  },
+  {
+    "draft_id": "reply-x-x-6ed361c1e1c4463a-20260303T090919Z",
+    "rewritten_content": "For macOS, this is exactly what I built: Codex Account Switcher in the menu bar (multi-account switch + usage bars + quick CLI/session actions).\nMaintainer note: I’m the maintainer. Repo: https://github.com/naveenshaji/codex-account-switcher",
+    "rationale": "Direct response aligned to the ask with concise feature summary and disclosure."
+  }
+]

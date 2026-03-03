@@ -1,0 +1,5 @@
+[
+  "I open sourced Codex Account Switcher: a macOS menu bar app to manage multiple Codex ChatGPT accounts, switch active auth in one click, and see 5h/weekly usage windows. Repo: https://github.com/naveenshaji/codex-account-switcher",
+  "If you\u2019re manually editing ~/.codex/auth.json to switch accounts, this might help. Codex Account Switcher gives one-click switching + usage bars per account in the menu bar. OSS: https://github.com/naveenshaji/codex-account-switcher",
+  "Built a utility for heavy Codex workflows: add accounts via OAuth, pick active account, restart app/open CLI, and track remaining usage windows. Open source: https://github.com/naveenshaji/codex-account-switcher"
+]

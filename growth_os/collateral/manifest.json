@@ -1,0 +1,13 @@
+{
+  "base_manifest": "/Users/naveenshaji/github/codex/projects/codex-account-switcher/growth_os/collateral/manifest.json",
+  "files": {
+    "blog_post_markdown": "/Users/naveenshaji/github/codex/projects/codex-account-switcher/growth_os/collateral/revisions/20260303T091042Z/blog_launch_post.md",
+    "change_log_markdown": "/Users/naveenshaji/github/codex/projects/codex-account-switcher/growth_os/collateral/revisions/20260303T091042Z/change_log.md",
+    "reddit_posts_json": "/Users/naveenshaji/github/codex/projects/codex-account-switcher/growth_os/collateral/revisions/20260303T091042Z/reddit_posts.json",
+    "website_landing_markdown": "/Users/naveenshaji/github/codex/projects/codex-account-switcher/growth_os/collateral/revisions/20260303T091042Z/website_landing.md",
+    "x_posts_json": "/Users/naveenshaji/github/codex/projects/codex-account-switcher/growth_os/collateral/revisions/20260303T091042Z/x_posts.json"
+  },
+  "generated_at": "2026-03-03T09:10:42.296450+00:00",
+  "learning_file": "/Users/naveenshaji/github/codex/projects/codex-account-switcher/growth_os/learning/learn-20260303T091019Z.json",
+  "revision": "20260303T091042Z"
+}
