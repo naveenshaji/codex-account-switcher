@@ -1,0 +1,92 @@
+import Foundation
+
+struct CodexAuthProfile: Codable, Identifiable, Hashable {
+    let id: UUID
+    var name: String
+    var email: String?
+    var planType: String?
+    var accountID: String
+    var accessToken: String
+    var refreshToken: String?
+    var idToken: String?
+    let createdAt: Date
+    var lastUsedAt: Date?
+
+    init(
+        id: UUID = UUID(),
+        name: String,
+        email: String? = nil,
+        planType: String? = nil,
+        accountID: String,
+        accessToken: String,
+        refreshToken: String? = nil,
+        idToken: String? = nil,
+        createdAt: Date = Date(),
+        lastUsedAt: Date? = nil
+    ) {
+        self.id = id
+        self.name = name
+        self.email = email?.trimmedNilIfEmpty
+        self.planType = planType?.trimmedNilIfEmpty
+        self.accountID = accountID
+        self.accessToken = accessToken
+        self.refreshToken = refreshToken?.trimmedNilIfEmpty
+        self.idToken = idToken?.trimmedNilIfEmpty
+        self.createdAt = createdAt
+        self.lastUsedAt = lastUsedAt
+    }
+}
+
+struct UsageWindow: Codable, Hashable {
+    var limitID: String
+    var usedPercent: Double
+    var windowDurationMins: Int?
+    var resetsAt: Date?
+
+    var normalizedUsedPercent: Double {
+        min(max(usedPercent, 0), 100)
+    }
+
+    var normalizedRemainingPercent: Double {
+        min(max(100 - normalizedUsedPercent, 0), 100)
+    }
+}
+
+struct UsageSnapshot: Codable, Hashable {
+    var planType: String?
+    var windows: [UsageWindow]
+    var fetchedAt: Date
+
+    var fiveHourWindow: UsageWindow? {
+        selectWindow(targetMinutes: 300)
+    }
+
+    var weeklyWindow: UsageWindow? {
+        selectWindow(targetMinutes: 10_080)
+    }
+
+    private func selectWindow(targetMinutes: Int) -> UsageWindow? {
+        if let exact = windows.first(where: { $0.windowDurationMins == targetMinutes }) {
+            return exact
+        }
+
+        let withDuration = windows.compactMap { window -> (UsageWindow, Int)? in
+            guard let minutes = window.windowDurationMins else { return nil }
+            return (window, abs(minutes - targetMinutes))
+        }
+
+        return withDuration.min(by: { $0.1 < $1.1 })?.0
+    }
+}
+
+struct ProfilesEnvelope: Codable {
+    var profiles: [CodexAuthProfile]
+    var activeProfileID: UUID?
+}
+
+extension String {
+    var trimmedNilIfEmpty: String? {
+        let trimmed = trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+}
