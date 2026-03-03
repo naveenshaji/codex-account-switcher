@@ -7,6 +7,7 @@ final class AppState {
     private let profilesStore = ProfilesStore()
     private let authStore = CodexAuthStore()
     private let usageService = UsageService()
+    private let launchAtLoginManager = LaunchAtLoginManager()
 
     var profiles: [CodexAuthProfile] = []
     var activeProfileID: UUID?
@@ -15,10 +16,12 @@ final class AppState {
     var isRefreshingUsage = false
     var isSwitching = false
     var isAddingOAuthProfile = false
+    var openAtLoginEnabled = false
     var lastErrorMessage: String?
 
     init() {
         loadProfiles()
+        refreshOpenAtLoginState()
     }
 
     var sortedProfiles: [CodexAuthProfile] {
@@ -125,6 +128,20 @@ final class AppState {
 
     func clearError() {
         lastErrorMessage = nil
+    }
+
+    func refreshOpenAtLoginState() {
+        openAtLoginEnabled = launchAtLoginManager.isEnabled()
+    }
+
+    func setOpenAtLoginEnabled(_ enabled: Bool) {
+        do {
+            try launchAtLoginManager.setEnabled(enabled)
+            openAtLoginEnabled = launchAtLoginManager.isEnabled()
+        } catch {
+            openAtLoginEnabled = launchAtLoginManager.isEnabled()
+            lastErrorMessage = "Failed to update startup setting: \(error.localizedDescription)"
+        }
     }
 
     func refreshUsageForAllProfiles() async {

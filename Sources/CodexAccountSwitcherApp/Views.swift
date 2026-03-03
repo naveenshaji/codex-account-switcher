@@ -1,8 +1,5 @@
-import AppKit
 import SwiftUI
 import Observation
-
-private let manageWindowIdentifier = NSUserInterfaceItemIdentifier("manage-accounts-window")
 
 @main
 struct CodexAccountSwitcherApp: App {
@@ -18,18 +15,11 @@ struct CodexAccountSwitcherApp: App {
                 }
         }
         .menuBarExtraStyle(.window)
-
-        WindowGroup("Codex Account Switcher", id: "manage-accounts") {
-            ManageAccountsView(appState: appState)
-                .frame(minWidth: 760, minHeight: 520)
-        }
-        .defaultSize(width: 860, height: 620)
     }
 }
 
 struct MenuContentView: View {
     @Bindable var appState: AppState
-    @Environment(\.openWindow) private var openWindow
     @State private var showRestartHint = false
     @State private var isCodexRunning = ProcessActions.isCodexDesktopRunning()
 
@@ -48,15 +38,11 @@ struct MenuContentView: View {
                     ) {
                         Task { await appState.refreshUsageForAllProfiles() }
                     }
-
-                    HoverIconButton(systemImage: "gearshape", helpText: "Manage accounts") {
-                        openManageWindow()
-                    }
                 }
             }
 
             if appState.sortedProfiles.isEmpty {
-                Text("No saved accounts yet. Open Manage to add or import one.")
+                Text("No saved accounts yet. Open Settings to add one.")
                     .foregroundStyle(.secondary)
                     .font(.footnote)
             } else {
@@ -78,6 +64,26 @@ struct MenuContentView: View {
                 MenuActionRowButton(title: "New CLI Session", systemImage: "terminal") {
                     _ = ProcessActions.openNewCodexCLITerminal()
                 }
+
+                Menu {
+                    Button(appState.isAddingOAuthProfile ? "Adding account..." : "Add account via ChatGPT OAuth") {
+                        Task { await appState.addProfileViaOAuth() }
+                    }
+                    .disabled(appState.isAddingOAuthProfile)
+
+                    Divider()
+
+                    Toggle(
+                        "Open automatically at startup",
+                        isOn: Binding(
+                            get: { appState.openAtLoginEnabled },
+                            set: { appState.setOpenAtLoginEnabled($0) }
+                        )
+                    )
+                } label: {
+                    MenuActionRowLabel(title: "Settings", systemImage: "gearshape")
+                }
+                .menuStyle(.borderlessButton)
             }
 
             if showRestartHint {
@@ -100,30 +106,10 @@ struct MenuContentView: View {
         .animation(.easeInOut(duration: 0.2), value: showRestartHint)
         .onAppear {
             refreshCodexRunningState()
+            appState.refreshOpenAtLoginState()
         }
         .onDisappear {
             showRestartHint = false
-        }
-    }
-
-    private func openManageWindow() {
-        openWindow(id: "manage-accounts")
-        Task { @MainActor in
-            for _ in 0..<12 {
-                if let window = NSApp.windows.first(where: { $0.identifier == manageWindowIdentifier }) {
-                    window.collectionBehavior.insert(.moveToActiveSpace)
-                    window.level = .normal
-                    window.orderFrontRegardless()
-                    window.makeKeyAndOrderFront(nil)
-                    NSApplication.shared.activate(ignoringOtherApps: true)
-                    NSRunningApplication.current.activate(options: [.activateAllWindows])
-                    return
-                }
-                try? await Task.sleep(nanoseconds: 75_000_000)
-            }
-
-            NSApplication.shared.activate(ignoringOtherApps: true)
-            NSRunningApplication.current.activate(options: [.activateAllWindows])
         }
     }
 
@@ -140,217 +126,47 @@ struct MenuContentView: View {
     @ViewBuilder
     private func profileMenuRow(_ profile: CodexAuthProfile) -> some View {
         let isActive = appState.activeProfileID == profile.id
+        let usage = appState.usageByProfileID[profile.id]
+        let plan = profile.planType?.trimmedNilIfEmpty ?? usage?.planType?.trimmedNilIfEmpty
 
         VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Text(profile.displayEmail)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(isActive ? .primary : .secondary)
-                    .opacity(isActive ? 1.0 : 0.85)
-                    .lineLimit(1)
+                HStack(spacing: 6) {
+                    Text(profile.displayEmail)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(isActive ? .primary : .secondary)
+                        .opacity(isActive ? 1.0 : 0.85)
+                        .lineLimit(1)
 
-                Spacer()
-
-                ActiveAccountButton(
-                    isActive: isActive,
-                    isDisabled: appState.isSwitching,
-                    onActivate: {
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            if appState.setActiveProfile(id: profile.id) {
-                                showRestartHint = true
-                            }
-                        }
-                    }
-                )
-            }
-
-            UsageBarsView(usage: appState.usageByProfileID[profile.id])
-        }
-        .padding(.vertical, 2)
-        .animation(.easeInOut(duration: 0.2), value: isActive)
-    }
-}
-
-struct ManageAccountsView: View {
-    @Bindable var appState: AppState
-
-    @State private var showingAddSheet = false
-    @State private var selectedProfileID: UUID?
-    @State private var isCodexRunning = ProcessActions.isCodexDesktopRunning()
-
-    var body: some View {
-        HStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack {
-                    Text("Saved Accounts")
-                        .font(.headline)
-                    Spacer()
-                    Button("Add") {
-                        showingAddSheet = true
+                    if let plan {
+                        SubscriptionBadge(plan: plan)
                     }
                 }
 
-                List(selection: $selectedProfileID) {
-                    ForEach(appState.sortedProfiles) { profile in
-                        AccountRowView(
-                            profile: profile,
-                            isActive: appState.activeProfileID == profile.id,
-                            usage: appState.usageByProfileID[profile.id],
-                            onSetActive: {
-                                withAnimation(.easeInOut(duration: 0.2)) {
-                                    _ = appState.setActiveProfile(id: profile.id)
+                Spacer()
+
+                HStack(spacing: 4) {
+                    ActiveAccountButton(
+                        isActive: isActive,
+                        isDisabled: appState.isSwitching,
+                        onActivate: {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                if appState.setActiveProfile(id: profile.id) {
+                                    showRestartHint = true
                                 }
                             }
-                        )
-                        .tag(profile.id)
-                        .contextMenu {
-                            Button("Delete", role: .destructive) {
-                                appState.deleteProfile(id: profile.id)
-                            }
                         }
+                    )
+
+                    RowOverflowMenu {
+                        appState.deleteProfile(id: profile.id)
                     }
                 }
-                .frame(minWidth: 420)
-            }
-            .padding(16)
-
-            Divider()
-
-            VStack(alignment: .leading, spacing: 14) {
-                Text("Actions")
-                    .font(.headline)
-
-                Button(appState.isAddingOAuthProfile ? "Waiting for OAuth login..." : "Add account via ChatGPT OAuth") {
-                    Task {
-                        await appState.addProfileViaOAuth()
-                    }
-                }
-                .disabled(appState.isAddingOAuthProfile)
-
-                Button("Import current ~/.codex/auth.json") {
-                    appState.importCurrentAuthAsProfile()
-                }
-
-                Button(appState.isRefreshingUsage ? "Refreshing usage..." : "Refresh usage for all accounts") {
-                    Task { await appState.refreshUsageForAllProfiles() }
-                }
-                .disabled(appState.isRefreshingUsage)
-
-                if let selectedProfileID,
-                   appState.profiles.contains(where: { $0.id == selectedProfileID }) {
-                    Button("Delete selected account", role: .destructive) {
-                        appState.deleteProfile(id: selectedProfileID)
-                    }
-                }
-
-                Divider()
-
-                Button(isCodexRunning ? "Restart Codex desktop app" : "Start Codex desktop app") {
-                    _ = ProcessActions.restartCodexDesktopApp()
-                    refreshCodexRunningState(afterDelay: 0.8)
-                }
-
-                Button("Open new Codex CLI terminal") {
-                    _ = ProcessActions.openNewCodexCLITerminal()
-                }
-
-                Divider()
-
-                Text("Switching accounts updates `~/.codex/auth.json`. Start a new CLI session and restart Codex app to use the switched account.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-
-                Spacer()
-
-                if let error = appState.lastErrorMessage {
-                    Text(error)
-                        .font(.footnote)
-                        .foregroundStyle(.red)
-                }
-            }
-            .padding(16)
-            .frame(minWidth: 320)
-        }
-        .sheet(isPresented: $showingAddSheet) {
-            AddProfileSheet { profile in
-                appState.addProfile(profile)
-            }
-        }
-        .background(WindowAccessor { window in
-            window.identifier = manageWindowIdentifier
-            window.collectionBehavior.insert(.moveToActiveSpace)
-        })
-        .onAppear {
-            refreshCodexRunningState()
-        }
-    }
-
-    private func refreshCodexRunningState(afterDelay seconds: Double = 0) {
-        Task { @MainActor in
-            if seconds > 0 {
-                let nanoseconds = UInt64(seconds * 1_000_000_000)
-                try? await Task.sleep(nanoseconds: nanoseconds)
-            }
-            isCodexRunning = ProcessActions.isCodexDesktopRunning()
-        }
-    }
-}
-
-private struct WindowAccessor: NSViewRepresentable {
-    let onResolve: (NSWindow) -> Void
-
-    func makeNSView(context: Context) -> NSView {
-        let view = NSView()
-        DispatchQueue.main.async {
-            if let window = view.window {
-                onResolve(window)
-            }
-        }
-        return view
-    }
-
-    func updateNSView(_ nsView: NSView, context: Context) {
-        DispatchQueue.main.async {
-            if let window = nsView.window {
-                onResolve(window)
-            }
-        }
-    }
-}
-
-struct AccountRowView: View {
-    let profile: CodexAuthProfile
-    let isActive: Bool
-    let usage: UsageSnapshot?
-    let onSetActive: () -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text(profile.displayEmail)
-                    .font(.body.weight(.semibold))
-                    .foregroundStyle(isActive ? .primary : .secondary)
-                    .opacity(isActive ? 1.0 : 0.82)
-                    .lineLimit(1)
-
-                Spacer()
-
-                ActiveAccountButton(
-                    isActive: isActive,
-                    isDisabled: false,
-                    onActivate: onSetActive
-                )
-            }
-
-            if let plan = profile.planType?.trimmedNilIfEmpty ?? usage?.planType?.trimmedNilIfEmpty {
-                Text(plan.uppercased())
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
             }
 
             UsageBarsView(usage: usage)
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, 2)
         .animation(.easeInOut(duration: 0.2), value: isActive)
     }
 }
@@ -388,6 +204,33 @@ private struct ActiveAccountButton: View {
     }
 }
 
+private struct RowOverflowMenu: View {
+    let onRemove: () -> Void
+    @State private var isHovered = false
+
+    var body: some View {
+        Menu {
+            Button("Remove Account", role: .destructive, action: onRemove)
+        } label: {
+            Image(systemName: "ellipsis.circle")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .padding(4)
+                .background(
+                    Circle()
+                        .fill(isHovered ? Color.secondary.opacity(0.18) : Color.clear)
+                )
+                .animation(.easeInOut(duration: 0.15), value: isHovered)
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .onHover { hovering in
+            isHovered = hovering
+        }
+        .help("More actions")
+    }
+}
+
 private struct MenuActionRowButton: View {
     let title: String
     let systemImage: String
@@ -416,6 +259,39 @@ private struct MenuActionRowButton: View {
             .animation(.easeInOut(duration: 0.15), value: isHovered)
         }
         .buttonStyle(.plain)
+        .onHover { hovering in
+            isHovered = hovering
+        }
+    }
+}
+
+private struct MenuActionRowLabel: View {
+    let title: String
+    let systemImage: String
+    @State private var isHovered = false
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: systemImage)
+                .font(.system(size: 12, weight: .semibold))
+                .frame(width: 14)
+                .foregroundStyle(.secondary)
+            Text(title)
+                .font(.subheadline)
+                .foregroundStyle(.primary)
+            Spacer()
+            Image(systemName: "chevron.right")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(.tertiary)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .contentShape(Rectangle())
+        .background(
+            RoundedRectangle(cornerRadius: 6)
+                .fill(isHovered ? Color.secondary.opacity(0.14) : Color.clear)
+        )
+        .animation(.easeInOut(duration: 0.15), value: isHovered)
         .onHover { hovering in
             isHovered = hovering
         }
@@ -457,6 +333,19 @@ private struct HoverIconButton: View {
             isHovered = hovering
         }
         .help(helpText)
+    }
+}
+
+private struct SubscriptionBadge: View {
+    let plan: String
+
+    var body: some View {
+        Text(plan.uppercased())
+            .font(.caption2.weight(.semibold))
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(.secondary.opacity(0.12), in: Capsule())
     }
 }
 
@@ -550,68 +439,5 @@ private struct SegmentedUsageBar: View {
                     .fill(index < filledSegments ? color : .secondary.opacity(0.16))
             }
         }
-    }
-}
-
-struct AddProfileSheet: View {
-    @Environment(\.dismiss) private var dismiss
-
-    @State private var name = ""
-    @State private var email = ""
-    @State private var planType = ""
-    @State private var accountID = ""
-    @State private var accessToken = ""
-    @State private var refreshToken = ""
-    @State private var idToken = ""
-
-    let onSave: (CodexAuthProfile) -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Add Account")
-                .font(.headline)
-
-            Group {
-                TextField("Display name", text: $name)
-                TextField("Email (optional)", text: $email)
-                TextField("Plan type (optional, e.g. plus/pro/team)", text: $planType)
-                TextField("ChatGPT Account ID", text: $accountID)
-            }
-
-            Group {
-                SecureField("Access token", text: $accessToken)
-                SecureField("Refresh token (optional)", text: $refreshToken)
-                SecureField("ID token (optional)", text: $idToken)
-            }
-
-            HStack {
-                Spacer()
-                Button("Cancel") {
-                    dismiss()
-                }
-                Button("Save") {
-                    let profile = CodexAuthProfile(
-                        name: name,
-                        email: email,
-                        planType: planType,
-                        accountID: accountID,
-                        accessToken: accessToken,
-                        refreshToken: refreshToken,
-                        idToken: idToken
-                    )
-                    onSave(profile)
-                    dismiss()
-                }
-                .disabled(!isValid)
-            }
-        }
-        .padding(16)
-        .frame(width: 520)
-    }
-
-    private var isValid: Bool {
-        !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
-        !accountID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
-        !accessToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 }
