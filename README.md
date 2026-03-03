@@ -55,16 +55,20 @@ swift run CodexAccountSwitcherApp
 
 ## How switching works
 
-- App stores profile data in macOS Keychain service:
-  - `com.naveenshaji.codex-account-switcher`
+- App stores profile data on disk:
+  - `~/.codex/account-switcher/profiles.json`
 - On switch, app writes selected account tokens to:
   - `~/.codex/auth.json`
 - Write is atomic via temp file + move, with restrictive file permissions.
 
+## Migration from older Keychain builds
+
+- On first launch after upgrading, if `~/.codex/account-switcher/profiles.json` does not exist, the app attempts a one-time migration from the legacy Keychain entry.
+- After successful migration, legacy Keychain data is deleted.
+
 ## Security and privacy notes
 
-- Credentials are stored in Keychain, not plain project files.
-- macOS may prompt for Keychain access depending on machine security settings and trust state of the app binary.
+- Credentials are stored in a local user file with restrictive permissions (`600`).
 - Usage requests are made with account access tokens to official ChatGPT backend endpoints used by Codex.
 
 ## Current limitations
@@ -80,7 +84,7 @@ Sources/CodexAccountSwitcherApp/
   AppState.swift          # app state + active profile reconciliation
   CodexAuthStore.swift    # read/write ~/.codex/auth.json
   CodexOAuthService.swift # OAuth flow via codex app-server JSON-RPC
-  KeychainStore.swift     # secure profile persistence
+  KeychainStore.swift     # disk profile store + legacy keychain migration
   Models.swift            # profile + usage models
   UsageService.swift      # usage endpoint client
   Views.swift             # menu bar + management UI
