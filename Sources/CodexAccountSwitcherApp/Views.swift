@@ -127,32 +127,21 @@ struct MenuContentView: View {
 
         VStack(alignment: .leading, spacing: 6) {
             HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(profile.name)
-                        .font(.subheadline.weight(.semibold))
-                    Text(profile.email ?? "No email")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
+                Text(profile.displayEmail)
+                    .font(.subheadline.weight(.semibold))
+                    .lineLimit(1)
 
                 Spacer()
 
-                Toggle(
-                    "",
-                    isOn: Binding(
-                        get: { isActive },
-                        set: { isOn in
-                            guard isOn, !isActive else { return }
-                            if appState.setActiveProfile(id: profile.id) {
-                                showRestartHint = true
-                            }
+                ActiveAccountButton(
+                    isActive: isActive,
+                    isDisabled: appState.isSwitching,
+                    onActivate: {
+                        if appState.setActiveProfile(id: profile.id) {
+                            showRestartHint = true
                         }
-                    )
+                    }
                 )
-                .labelsHidden()
-                .toggleStyle(.switch)
-                .disabled(appState.isSwitching)
-                .help(isActive ? "Active account" : "Set as active account")
             }
 
             UsageBarsView(usage: appState.usageByProfileID[profile.id])
@@ -299,28 +288,17 @@ struct AccountRowView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(profile.name)
-                        .font(.body.weight(.semibold))
-                    Text(profile.email ?? "No email")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
+                Text(profile.displayEmail)
+                    .font(.body.weight(.semibold))
+                    .lineLimit(1)
 
                 Spacer()
 
-                Toggle(
-                    "",
-                    isOn: Binding(
-                        get: { isActive },
-                        set: { isOn in
-                            guard isOn, !isActive else { return }
-                            onSetActive()
-                        }
-                    )
+                ActiveAccountButton(
+                    isActive: isActive,
+                    isDisabled: false,
+                    onActivate: onSetActive
                 )
-                .labelsHidden()
-                .toggleStyle(.switch)
             }
 
             if let plan = profile.planType?.trimmedNilIfEmpty ?? usage?.planType?.trimmedNilIfEmpty {
@@ -332,6 +310,27 @@ struct AccountRowView: View {
             UsageBarsView(usage: usage)
         }
         .padding(.vertical, 4)
+    }
+}
+
+private struct ActiveAccountButton: View {
+    let isActive: Bool
+    let isDisabled: Bool
+    let onActivate: () -> Void
+
+    var body: some View {
+        Button {
+            guard !isActive else { return }
+            onActivate()
+        } label: {
+            Image(systemName: isActive ? "largecircle.fill.circle" : "circle")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(isActive ? .green : .secondary)
+                .frame(width: 20, height: 20)
+        }
+        .buttonStyle(.plain)
+        .disabled(isDisabled || isActive)
+        .help(isActive ? "Active account" : "Set as active account")
     }
 }
 

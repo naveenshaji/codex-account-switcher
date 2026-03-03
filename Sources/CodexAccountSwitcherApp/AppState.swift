@@ -164,7 +164,7 @@ final class AppState {
                         profiles[idx].planType = snapshot.planType
                     }
                 case .failure(let error):
-                    if firstError == nil {
+                    if firstError == nil && !isCancellationError(error) {
                         firstError = error.localizedDescription
                     }
                 }
@@ -172,10 +172,27 @@ final class AppState {
 
             if let firstError {
                 lastErrorMessage = "Some usage requests failed: \(firstError)"
+            } else if let lastErrorMessage,
+                      lastErrorMessage.hasPrefix("Some usage requests failed:") {
+                self.lastErrorMessage = nil
             }
         }
 
         saveProfiles()
+    }
+
+    private func isCancellationError(_ error: Error) -> Bool {
+        if error is CancellationError {
+            return true
+        }
+
+        let nsError = error as NSError
+        if nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorCancelled {
+            return true
+        }
+
+        return error.localizedDescription.trimmingCharacters(in: .whitespacesAndNewlines)
+            .localizedCaseInsensitiveContains("cancel")
     }
 
     private func appendProfile(_ profile: CodexAuthProfile) {

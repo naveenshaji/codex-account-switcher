@@ -84,6 +84,18 @@ struct ProfilesEnvelope: Codable {
     var activeProfileID: UUID?
 }
 
+extension CodexAuthProfile {
+    var displayEmail: String {
+        if let email = email?.trimmedNilIfEmpty {
+            return email
+        }
+        if let name = name.trimmedNilIfEmpty {
+            return name
+        }
+        return "Unknown email"
+    }
+}
+
 extension String {
     var trimmedNilIfEmpty: String? {
         let trimmed = trimmingCharacters(in: .whitespacesAndNewlines)
