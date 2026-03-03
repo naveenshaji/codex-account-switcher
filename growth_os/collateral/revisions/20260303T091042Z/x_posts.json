@@ -1,5 +1,0 @@
-[
-  "Update on Codex Account Switcher (OSS): tightened around real workflow value - one-click account switch, per-account 5h/weekly usage, and quick Codex restart/new CLI actions. Repo: https://github.com/naveenshaji/codex-account-switcher",
-  "For people managing multiple Codex accounts on macOS: this menu bar tool removes most auth-switching friction and keeps active state visible. Open source: https://github.com/naveenshaji/codex-account-switcher",
-  "Codex Account Switcher now emphasizes security + operator workflow clarity in docs/collateral. If you want a no-drama multi-account setup: https://github.com/naveenshaji/codex-account-switcher"
-]
