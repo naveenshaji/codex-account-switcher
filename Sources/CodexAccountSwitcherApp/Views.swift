@@ -40,7 +40,12 @@ struct MenuContentView: View {
                     .font(.headline)
                 Spacer()
                 HStack(spacing: 10) {
-                    HoverIconButton(systemImage: "arrow.clockwise", helpText: "Refresh usage", isDisabled: appState.isRefreshingUsage) {
+                    HoverIconButton(
+                        systemImage: "arrow.clockwise",
+                        helpText: "Refresh usage",
+                        isLoading: appState.isRefreshingUsage,
+                        isDisabled: appState.isRefreshingUsage
+                    ) {
                         Task { await appState.refreshUsageForAllProfiles() }
                     }
 
@@ -420,14 +425,22 @@ private struct MenuActionRowButton: View {
 private struct HoverIconButton: View {
     let systemImage: String
     let helpText: String
+    var isLoading = false
     var isDisabled = false
     let action: () -> Void
     @State private var isHovered = false
 
     var body: some View {
         Button(action: action) {
-            Image(systemName: systemImage)
-                .font(.system(size: 12, weight: .semibold))
+            Group {
+                if isLoading {
+                    ProgressView()
+                        .controlSize(.small)
+                } else {
+                    Image(systemName: systemImage)
+                        .font(.system(size: 12, weight: .semibold))
+                }
+            }
                 .foregroundStyle(isDisabled ? .tertiary : .secondary)
                 .padding(6)
                 .background(
