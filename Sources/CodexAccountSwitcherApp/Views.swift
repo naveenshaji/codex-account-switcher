@@ -42,7 +42,7 @@ struct MenuContentView: View {
             }
 
             if appState.sortedProfiles.isEmpty {
-                Text("No saved accounts yet. Open Settings to add one.")
+                Text("No saved accounts yet. Use Add Account below.")
                     .foregroundStyle(.secondary)
                     .font(.footnote)
             } else {
@@ -66,6 +66,7 @@ struct MenuContentView: View {
                 }
 
                 Divider()
+                    .padding(.vertical, 4)
 
                 MenuActionRowButton(
                     title: appState.isAddingOAuthProfile ? "Adding Account..." : "Add Account",
@@ -255,7 +256,7 @@ private struct MenuToggleRowButton: View {
                 Image(systemName: isOn ? "checkmark" : "minus")
                     .font(.system(size: 11, weight: .semibold))
                     .frame(width: 14)
-                    .foregroundStyle(isOn ? Color.green : Color.secondary.opacity(0.6))
+                    .foregroundStyle(.secondary)
                 Text(title)
                     .font(.subheadline)
                     .foregroundStyle(.primary)
