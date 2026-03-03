@@ -39,24 +39,13 @@ struct MenuContentView: View {
                     .font(.headline)
                 Spacer()
                 HStack(spacing: 10) {
-                    Button {
+                    HoverIconButton(systemImage: "arrow.clockwise", helpText: "Refresh usage", isDisabled: appState.isRefreshingUsage) {
                         Task { await appState.refreshUsageForAllProfiles() }
-                    } label: {
-                        Image(systemName: "arrow.clockwise")
-                            .font(.system(size: 12, weight: .semibold))
                     }
-                    .buttonStyle(.plain)
-                    .help("Refresh usage")
-                    .disabled(appState.isRefreshingUsage)
 
-                    Button {
+                    HoverIconButton(systemImage: "gearshape", helpText: "Manage accounts") {
                         openManageWindow()
-                    } label: {
-                        Image(systemName: "gearshape")
-                            .font(.system(size: 12, weight: .semibold))
                     }
-                    .buttonStyle(.plain)
-                    .help("Manage accounts")
                 }
             }
 
@@ -85,6 +74,9 @@ struct MenuContentView: View {
                 Text("Restart Codex app and open a new CLI session to apply the new active account.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .transition(.opacity.combined(with: .move(edge: .bottom)))
             }
 
             if let error = appState.lastErrorMessage {
@@ -95,6 +87,7 @@ struct MenuContentView: View {
             }
         }
         .padding(.horizontal, 12)
+        .animation(.easeInOut(duration: 0.2), value: showRestartHint)
         .onDisappear {
             showRestartHint = false
         }
@@ -129,6 +122,8 @@ struct MenuContentView: View {
             HStack {
                 Text(profile.displayEmail)
                     .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(isActive ? .primary : .secondary)
+                    .opacity(isActive ? 1.0 : 0.85)
                     .lineLimit(1)
 
                 Spacer()
@@ -137,8 +132,10 @@ struct MenuContentView: View {
                     isActive: isActive,
                     isDisabled: appState.isSwitching,
                     onActivate: {
-                        if appState.setActiveProfile(id: profile.id) {
-                            showRestartHint = true
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            if appState.setActiveProfile(id: profile.id) {
+                                showRestartHint = true
+                            }
                         }
                     }
                 )
@@ -146,6 +143,8 @@ struct MenuContentView: View {
 
             UsageBarsView(usage: appState.usageByProfileID[profile.id])
         }
+        .padding(.vertical, 2)
+        .animation(.easeInOut(duration: 0.2), value: isActive)
     }
 }
 
@@ -174,7 +173,9 @@ struct ManageAccountsView: View {
                             isActive: appState.activeProfileID == profile.id,
                             usage: appState.usageByProfileID[profile.id],
                             onSetActive: {
-                                _ = appState.setActiveProfile(id: profile.id)
+                                withAnimation(.easeInOut(duration: 0.2)) {
+                                    _ = appState.setActiveProfile(id: profile.id)
+                                }
                             }
                         )
                         .tag(profile.id)
@@ -290,6 +291,8 @@ struct AccountRowView: View {
             HStack {
                 Text(profile.displayEmail)
                     .font(.body.weight(.semibold))
+                    .foregroundStyle(isActive ? .primary : .secondary)
+                    .opacity(isActive ? 1.0 : 0.82)
                     .lineLimit(1)
 
                 Spacer()
@@ -310,6 +313,7 @@ struct AccountRowView: View {
             UsageBarsView(usage: usage)
         }
         .padding(.vertical, 4)
+        .animation(.easeInOut(duration: 0.2), value: isActive)
     }
 }
 
@@ -317,6 +321,7 @@ private struct ActiveAccountButton: View {
     let isActive: Bool
     let isDisabled: Bool
     let onActivate: () -> Void
+    @State private var isHovered = false
 
     var body: some View {
         Button {
@@ -327,9 +332,20 @@ private struct ActiveAccountButton: View {
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(isActive ? .green : .secondary)
                 .frame(width: 20, height: 20)
+                .scaleEffect(isHovered && !isActive ? 1.08 : 1.0)
+                .background(
+                    Circle()
+                        .fill(isHovered ? Color.secondary.opacity(0.18) : Color.clear)
+                        .frame(width: 22, height: 22)
+                )
+                .animation(.easeInOut(duration: 0.15), value: isHovered)
+                .animation(.easeInOut(duration: 0.2), value: isActive)
         }
         .buttonStyle(.plain)
         .disabled(isDisabled || isActive)
+        .onHover { hovering in
+            isHovered = hovering
+        }
         .help(isActive ? "Active account" : "Set as active account")
     }
 }
@@ -338,6 +354,7 @@ private struct MenuActionRowButton: View {
     let title: String
     let systemImage: String
     let action: () -> Void
+    @State private var isHovered = false
 
     var body: some View {
         Button(action: action) {
@@ -354,18 +371,44 @@ private struct MenuActionRowButton: View {
             .padding(.horizontal, 8)
             .padding(.vertical, 6)
             .contentShape(Rectangle())
+            .background(
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(isHovered ? Color.secondary.opacity(0.14) : Color.clear)
+            )
+            .animation(.easeInOut(duration: 0.15), value: isHovered)
         }
-        .buttonStyle(MenuRowButtonStyle())
+        .buttonStyle(.plain)
+        .onHover { hovering in
+            isHovered = hovering
+        }
     }
 }
 
-private struct MenuRowButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .background(
-                RoundedRectangle(cornerRadius: 6)
-                    .fill(configuration.isPressed ? Color.secondary.opacity(0.2) : Color.clear)
-            )
+private struct HoverIconButton: View {
+    let systemImage: String
+    let helpText: String
+    var isDisabled = false
+    let action: () -> Void
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(isDisabled ? .tertiary : .secondary)
+                .padding(6)
+                .background(
+                    Circle()
+                        .fill(isHovered ? Color.secondary.opacity(0.18) : Color.clear)
+                )
+                .animation(.easeInOut(duration: 0.15), value: isHovered)
+        }
+        .buttonStyle(.plain)
+        .disabled(isDisabled)
+        .onHover { hovering in
+            isHovered = hovering
+        }
+        .help(helpText)
     }
 }
 

@@ -22,11 +22,7 @@ final class AppState {
     }
 
     var sortedProfiles: [CodexAuthProfile] {
-        profiles.sorted { lhs, rhs in
-            if lhs.id == activeProfileID { return true }
-            if rhs.id == activeProfileID { return false }
-            return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
-        }
+        profiles
     }
 
     func loadProfiles() {
