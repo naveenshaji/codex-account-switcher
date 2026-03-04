@@ -472,6 +472,7 @@ private struct UsageHistoryGraphView: View {
         let remainingPercent: Double?
         let kind: BarKind
         let isResetPoint: Bool
+        let predictedLimitDate: Date?
     }
 
     var body: some View {
@@ -642,16 +643,31 @@ private struct UsageHistoryGraphView: View {
 
         let actualHistoricalPoints = sampledByIndex.values.sorted(by: { $0.timestamp < $1.timestamp })
         let predictionModel = predictionModel(from: actualHistoricalPoints)
+        let predictedLimitDate = computePredictedLimitDate(from: predictionModel)
 
         if sampledByIndex.isEmpty {
             return (0..<totalCount).map { index in
                 if index < historicalCount {
                     let timestamp = start.addingTimeInterval((Double(index) + 0.5) * totalDuration / Double(historicalCount))
-                    return RenderedBar(id: index, timestamp: timestamp, remainingPercent: nil, kind: .empty, isResetPoint: false)
+                    return RenderedBar(
+                        id: index,
+                        timestamp: timestamp,
+                        remainingPercent: nil,
+                        kind: .empty,
+                        isResetPoint: false,
+                        predictedLimitDate: nil
+                    )
                 } else {
                     let forecastIndex = index - historicalCount
                     let timestamp = end.addingTimeInterval((Double(forecastIndex) + 1) * forecastDuration / Double(max(forecastCount, 1)))
-                    return RenderedBar(id: index, timestamp: timestamp, remainingPercent: nil, kind: .empty, isResetPoint: false)
+                    return RenderedBar(
+                        id: index,
+                        timestamp: timestamp,
+                        remainingPercent: nil,
+                        kind: .empty,
+                        isResetPoint: false,
+                        predictedLimitDate: nil
+                    )
                 }
             }
         }
@@ -683,7 +699,8 @@ private struct UsageHistoryGraphView: View {
                     timestamp: sample.timestamp,
                     remainingPercent: min(max(sample.remainingPercent, 0), 100),
                     kind: .actual,
-                    isResetPoint: sample.isResetPoint
+                    isResetPoint: sample.isResetPoint,
+                    predictedLimitDate: nil
                 )
             }
 
@@ -694,7 +711,14 @@ private struct UsageHistoryGraphView: View {
                 let leftSample = sampledByIndex[leftIndex],
                 let rightSample = sampledByIndex[rightIndex]
             else {
-                return RenderedBar(id: index, timestamp: timestamp, remainingPercent: nil, kind: .empty, isResetPoint: false)
+                return RenderedBar(
+                    id: index,
+                    timestamp: timestamp,
+                    remainingPercent: nil,
+                    kind: .empty,
+                    isResetPoint: false,
+                    predictedLimitDate: nil
+                )
             }
 
             let distance = Double(rightIndex - leftIndex)
@@ -705,7 +729,8 @@ private struct UsageHistoryGraphView: View {
                 timestamp: timestamp,
                 remainingPercent: min(max(interpolated, 0), 100),
                 kind: .gap,
-                isResetPoint: false
+                isResetPoint: false,
+                predictedLimitDate: nil
             )
         }
 
@@ -719,7 +744,8 @@ private struct UsageHistoryGraphView: View {
                     timestamp: timestamp,
                     remainingPercent: nil,
                     kind: .empty,
-                    isResetPoint: false
+                    isResetPoint: false,
+                    predictedLimitDate: nil
                 )
             }
 
@@ -730,7 +756,8 @@ private struct UsageHistoryGraphView: View {
                 timestamp: timestamp,
                 remainingPercent: min(max(projected, 0), 100),
                 kind: .prediction,
-                isResetPoint: false
+                isResetPoint: false,
+                predictedLimitDate: predictedLimitDate
             )
         }
 
@@ -762,7 +789,12 @@ private struct UsageHistoryGraphView: View {
             return "No data"
         }
         if bar.kind == .prediction {
-            return "Predicted \(Int((bar.remainingPercent ?? 0).rounded()))%"
+            let predicted = "Predicted \(Int((bar.remainingPercent ?? 0).rounded()))%"
+            if let predictedLimitDate = bar.predictedLimitDate,
+               let eta = shortEta(to: predictedLimitDate, from: bar.timestamp) {
+                return "\(predicted) • 0% in \(eta)"
+            }
+            return predicted
         }
         let percent = "\(Int((bar.remainingPercent ?? 0).rounded()))%"
         return bar.isResetPoint ? "Reset detected • \(percent)" : percent
@@ -844,17 +876,17 @@ private struct UsageHistoryGraphView: View {
     private func predictionHorizon(for range: UsageHistoryRange) -> TimeInterval {
         switch range {
         case .h1:
-            return 15 * 60
+            return 30 * 60
         case .h5:
-            return 45 * 60
+            return 2 * 60 * 60
         case .h12:
-            return 90 * 60
+            return 4 * 60 * 60
         case .h24:
-            return 3 * 60 * 60
+            return 8 * 60 * 60
         case .d7:
-            return 12 * 60 * 60
+            return 2 * 24 * 60 * 60
         case .d30:
-            return 24 * 60 * 60
+            return 7 * 24 * 60 * 60
         }
     }
 
@@ -876,13 +908,36 @@ private struct UsageHistoryGraphView: View {
         let titleWidth = CGFloat(title.count) * 6.6
         let timeWidth = CGFloat(timestampText.count) * 5.8
         let estimated = titleWidth + timeWidth + 36
-        return min(max(estimated, 108), 260)
+        return min(max(estimated, 108), 320)
     }
 
     private func tooltipTimeString(from date: Date) -> String {
         let formatter = DateFormatter()
         formatter.dateFormat = "MMM d, HH:mm"
         return formatter.string(from: date)
+    }
+
+    private func computePredictedLimitDate(from model: PredictionModel?) -> Date? {
+        guard let model, model.slopePerSecond < 0, model.anchorRemaining > 0 else {
+            return nil
+        }
+        let secondsToZero = model.anchorRemaining / abs(model.slopePerSecond)
+        guard secondsToZero.isFinite, secondsToZero > 0 else {
+            return nil
+        }
+        return model.anchorTimestamp.addingTimeInterval(secondsToZero)
+    }
+
+    private func shortEta(to target: Date, from reference: Date) -> String? {
+        let interval = target.timeIntervalSince(reference)
+        guard interval > 60 else { return "1m" }
+
+        let formatter = DateComponentsFormatter()
+        formatter.unitsStyle = .abbreviated
+        formatter.maximumUnitCount = 1
+        formatter.allowedUnits = [.day, .hour, .minute]
+        formatter.zeroFormattingBehavior = .dropAll
+        return formatter.string(from: interval)
     }
 }
 
