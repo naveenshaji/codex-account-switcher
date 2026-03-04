@@ -556,6 +556,8 @@ private struct UsageHistoryGraphView: View {
                         }
 
                         if let hovered {
+                            let tooltipWidth = tooltipWidth(for: hovered.bar)
+                            let tooltipHeight: CGFloat = 24
                             Path { path in
                                 path.move(to: CGPoint(x: hovered.x, y: 0))
                                 path.addLine(to: CGPoint(x: hovered.x, y: renderSize.height))
@@ -566,7 +568,11 @@ private struct UsageHistoryGraphView: View {
                                 title: hoveredTitle(for: hovered.bar),
                                 timestamp: hovered.bar.timestamp
                             )
-                            .position(x: tooltipX(for: hovered.x, width: renderSize.width), y: 8)
+                            .frame(width: tooltipWidth)
+                            .position(
+                                x: tooltipX(for: hovered.x, width: renderSize.width, tooltipWidth: tooltipWidth),
+                                y: tooltipY(height: renderSize.height, tooltipHeight: tooltipHeight)
+                            )
                         }
                     }
                     .frame(width: renderSize.width, height: renderSize.height)
@@ -845,10 +851,31 @@ private struct UsageHistoryGraphView: View {
         }
     }
 
-    private func tooltipX(for x: CGFloat, width: CGFloat) -> CGFloat {
-        let minX: CGFloat = 52
-        let maxX = max(width - 52, minX)
+    private func tooltipX(for x: CGFloat, width: CGFloat, tooltipWidth: CGFloat) -> CGFloat {
+        let half = tooltipWidth / 2
+        let minX = half + 4
+        let maxX = max(width - half - 4, minX)
         return min(max(x, minX), maxX)
+    }
+
+    private func tooltipY(height: CGFloat, tooltipHeight: CGFloat) -> CGFloat {
+        let minY = (tooltipHeight / 2) + 3
+        let maxY = max(height - (tooltipHeight / 2) - 2, minY)
+        let preferredY = minY
+        return min(preferredY, maxY)
+    }
+
+    private func tooltipWidth(for bar: RenderedBar) -> CGFloat {
+        switch bar.kind {
+        case .gap:
+            return 116
+        case .prediction:
+            return 150
+        case .actual where bar.isResetPoint:
+            return 172
+        default:
+            return 108
+        }
     }
 }
 
@@ -865,6 +892,7 @@ private struct GraphTooltipView: View {
                 .font(.caption2)
                 .foregroundStyle(.secondary)
         }
+        .lineLimit(1)
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
         .background(.ultraThinMaterial, in: Capsule())
