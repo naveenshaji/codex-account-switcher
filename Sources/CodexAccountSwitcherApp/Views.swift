@@ -211,7 +211,8 @@ struct MenuContentView: View {
             AccountUsageDetailView(
                 usage: usage,
                 history: history,
-                isGraphMode: appState.isGraphMode
+                isGraphMode: appState.isGraphMode,
+                historyRange: appState.selectedHistoryRange
             )
 
             if let actionError = appState.actionErrorByProfileID[profile.id] {
@@ -434,11 +435,12 @@ private struct AccountUsageDetailView: View {
     let usage: UsageSnapshot?
     let history: [UsageSeriesPoint]
     let isGraphMode: Bool
+    let historyRange: UsageHistoryRange
 
     var body: some View {
         ZStack {
             if isGraphMode {
-                UsageHistoryGraphView(points: history)
+                UsageHistoryGraphView(points: history, range: historyRange)
                     .transition(.opacity)
             } else {
                 UsageBarsView(usage: usage)
@@ -452,35 +454,54 @@ private struct AccountUsageDetailView: View {
 
 private struct UsageHistoryGraphView: View {
     let points: [UsageSeriesPoint]
+    let range: UsageHistoryRange
     @State private var hoverLocation: CGPoint?
 
-    private struct RenderedPoint {
-        let model: UsageSeriesPoint
-        let point: CGPoint
+    private enum BarKind {
+        case actual
+        case gap
+        case empty
+    }
+
+    private struct RenderedBar: Identifiable {
+        let id: Int
+        let timestamp: Date
+        let remainingPercent: Double?
+        let kind: BarKind
     }
 
     var body: some View {
         GeometryReader { geo in
-            let sorted = points.sorted(by: { $0.timestamp < $1.timestamp })
-            let rendered = renderedPoints(from: sorted, in: geo.size)
+            let renderedBars = renderedBars(in: geo.size)
+            let hovered = hoveredBar(at: hoverLocation, in: renderedBars, size: geo.size)
 
             ZStack(alignment: .topLeading) {
                 RoundedRectangle(cornerRadius: 6)
                     .fill(.secondary.opacity(0.08))
 
-                if rendered.count >= 2 {
-                    Path { path in
-                        path.move(to: rendered[0].point)
-                        for sample in rendered.dropFirst() {
-                            path.addLine(to: sample.point)
+                if renderedBars.contains(where: { $0.kind != .empty }) {
+                    Canvas { context, size in
+                        let count = max(renderedBars.count, 1)
+                        let step = size.width / CGFloat(count)
+                        let barWidth = max(1, min(2, step * 0.55))
+                        let topPadding: CGFloat = 3
+                        let bottomPadding: CGFloat = 2
+                        let drawableHeight = max(size.height - topPadding - bottomPadding, 1)
+
+                        for (index, bar) in renderedBars.enumerated() {
+                            guard bar.kind != .empty, let remainingPercent = bar.remainingPercent else {
+                                continue
+                            }
+
+                            let ratio = CGFloat(min(max(remainingPercent, 0), 100) / 100)
+                            let barHeight = max(1, ratio * drawableHeight)
+                            let x = (CGFloat(index) + 0.5) * step
+                            let y = topPadding + (drawableHeight - barHeight)
+                            let rect = CGRect(x: x - (barWidth / 2), y: y, width: barWidth, height: barHeight)
+                            let color: Color = bar.kind == .actual ? .green : .secondary.opacity(0.35)
+                            context.fill(Path(roundedRect: rect, cornerRadius: barWidth / 2), with: .color(color))
                         }
                     }
-                    .stroke(.green, style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
-                } else if let single = rendered.first {
-                    Circle()
-                        .fill(.green)
-                        .frame(width: 6, height: 6)
-                        .position(single.point)
                 } else {
                     Text("Collecting history…")
                         .font(.caption2)
@@ -488,21 +509,18 @@ private struct UsageHistoryGraphView: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
                 }
 
-                if let hoverLocation,
-                   let nearest = nearestSample(toX: hoverLocation.x, in: rendered) {
+                if let hovered {
                     Path { path in
-                        path.move(to: CGPoint(x: nearest.point.x, y: 0))
-                        path.addLine(to: CGPoint(x: nearest.point.x, y: geo.size.height))
+                        path.move(to: CGPoint(x: hovered.x, y: 0))
+                        path.addLine(to: CGPoint(x: hovered.x, y: geo.size.height))
                     }
                     .stroke(.secondary.opacity(0.5), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
 
-                    Circle()
-                        .fill(.green)
-                        .frame(width: 7, height: 7)
-                        .position(nearest.point)
-
-                    GraphTooltipView(point: nearest.model)
-                        .position(x: tooltipX(for: nearest.point.x, width: geo.size.width), y: 8)
+                    GraphTooltipView(
+                        title: hovered.bar.kind == .gap ? "No data" : "\(Int((hovered.bar.remainingPercent ?? 0).rounded()))%",
+                        timestamp: hovered.bar.timestamp
+                    )
+                    .position(x: tooltipX(for: hovered.x, width: geo.size.width), y: 8)
                 }
             }
             .clipShape(.rect(cornerRadius: 6))
@@ -518,28 +536,107 @@ private struct UsageHistoryGraphView: View {
         }
     }
 
-    private func renderedPoints(from points: [UsageSeriesPoint], in size: CGSize) -> [RenderedPoint] {
-        guard !points.isEmpty else { return [] }
+    private func renderedBars(in size: CGSize) -> [RenderedBar] {
+        let count = idealBarCount(for: size.width)
+        guard count > 0 else { return [] }
 
-        let minDate = points.first!.timestamp
-        let maxDate = points.last!.timestamp
-        let total = max(maxDate.timeIntervalSince(minDate), 1)
-        let width = max(size.width, 1)
-        let height = max(size.height, 1)
-        let topPadding: CGFloat = 4
-        let bottomPadding: CGFloat = 4
-        let drawableHeight = max(height - topPadding - bottomPadding, 1)
+        let end = Date()
+        let start = end.addingTimeInterval(-range.duration)
+        let totalDuration = max(range.duration, 1)
+        let sortedPoints = points.sorted(by: { $0.timestamp < $1.timestamp })
 
-        return points.map { sample in
-            let x = CGFloat(sample.timestamp.timeIntervalSince(minDate) / total) * width
-            let yRatio = CGFloat(min(max(sample.remainingPercent, 0), 100) / 100)
-            let y = topPadding + (1 - yRatio) * drawableHeight
-            return RenderedPoint(model: sample, point: CGPoint(x: x, y: y))
+        var sampledByIndex: [Int: UsageSeriesPoint] = [:]
+        for sample in sortedPoints {
+            guard sample.timestamp >= start, sample.timestamp <= end else { continue }
+            let progress = sample.timestamp.timeIntervalSince(start) / totalDuration
+            var index = Int(floor(progress * Double(count)))
+            index = min(max(index, 0), count - 1)
+            if let existing = sampledByIndex[index] {
+                if sample.timestamp > existing.timestamp {
+                    sampledByIndex[index] = sample
+                }
+            } else {
+                sampledByIndex[index] = sample
+            }
+        }
+
+        if sampledByIndex.isEmpty {
+            return (0..<count).map { index in
+                let timestamp = start.addingTimeInterval((Double(index) + 0.5) * totalDuration / Double(count))
+                return RenderedBar(id: index, timestamp: timestamp, remainingPercent: nil, kind: .empty)
+            }
+        }
+
+        var nearestLeft: [Int?] = Array(repeating: nil, count: count)
+        var lastSeen: Int?
+        for index in 0..<count {
+            if sampledByIndex[index] != nil {
+                lastSeen = index
+            }
+            nearestLeft[index] = lastSeen
+        }
+
+        var nearestRight: [Int?] = Array(repeating: nil, count: count)
+        var nextSeen: Int?
+        for index in stride(from: count - 1, through: 0, by: -1) {
+            if sampledByIndex[index] != nil {
+                nextSeen = index
+            }
+            nearestRight[index] = nextSeen
+        }
+
+        return (0..<count).map { index in
+            let timestamp = start.addingTimeInterval((Double(index) + 0.5) * totalDuration / Double(count))
+
+            if let sample = sampledByIndex[index] {
+                return RenderedBar(
+                    id: index,
+                    timestamp: sample.timestamp,
+                    remainingPercent: min(max(sample.remainingPercent, 0), 100),
+                    kind: .actual
+                )
+            }
+
+            guard
+                let leftIndex = nearestLeft[index],
+                let rightIndex = nearestRight[index],
+                leftIndex != rightIndex,
+                let leftSample = sampledByIndex[leftIndex],
+                let rightSample = sampledByIndex[rightIndex]
+            else {
+                return RenderedBar(id: index, timestamp: timestamp, remainingPercent: nil, kind: .empty)
+            }
+
+            let distance = Double(rightIndex - leftIndex)
+            let progress = distance > 0 ? Double(index - leftIndex) / distance : 0
+            let interpolated = leftSample.remainingPercent + (rightSample.remainingPercent - leftSample.remainingPercent) * progress
+            return RenderedBar(
+                id: index,
+                timestamp: timestamp,
+                remainingPercent: min(max(interpolated, 0), 100),
+                kind: .gap
+            )
         }
     }
 
-    private func nearestSample(toX x: CGFloat, in rendered: [RenderedPoint]) -> RenderedPoint? {
-        rendered.min(by: { abs($0.point.x - x) < abs($1.point.x - x) })
+    private func hoveredBar(
+        at location: CGPoint?,
+        in bars: [RenderedBar],
+        size: CGSize
+    ) -> (bar: RenderedBar, x: CGFloat)? {
+        guard let location, !bars.isEmpty else { return nil }
+        let step = size.width / CGFloat(max(bars.count, 1))
+        guard step > 0 else { return nil }
+        let index = min(max(Int(floor(location.x / step)), 0), bars.count - 1)
+        let bar = bars[index]
+        guard bar.kind != .empty else { return nil }
+        let x = (CGFloat(index) + 0.5) * step
+        return (bar, x)
+    }
+
+    private func idealBarCount(for width: CGFloat) -> Int {
+        let estimate = Int(floor(width / 4.0))
+        return min(max(estimate, 24), 110)
     }
 
     private func tooltipX(for x: CGFloat, width: CGFloat) -> CGFloat {
@@ -550,14 +647,15 @@ private struct UsageHistoryGraphView: View {
 }
 
 private struct GraphTooltipView: View {
-    let point: UsageSeriesPoint
+    let title: String
+    let timestamp: Date
 
     var body: some View {
         HStack(spacing: 6) {
-            Text("\(Int(point.remainingPercent.rounded()))%")
+            Text(title)
                 .font(.caption2.monospacedDigit())
                 .foregroundStyle(.primary)
-            Text(timeString(from: point.timestamp))
+            Text(timeString(from: timestamp))
                 .font(.caption2)
                 .foregroundStyle(.secondary)
         }
