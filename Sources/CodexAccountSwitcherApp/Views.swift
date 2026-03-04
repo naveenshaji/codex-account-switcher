@@ -468,6 +468,7 @@ private struct UsageHistoryGraphView: View {
         let timestamp: Date
         let remainingPercent: Double?
         let kind: BarKind
+        let isResetPoint: Bool
     }
 
     var body: some View {
@@ -500,6 +501,20 @@ private struct UsageHistoryGraphView: View {
                             let rect = CGRect(x: x - (barWidth / 2), y: y, width: barWidth, height: barHeight)
                             let color: Color = bar.kind == .actual ? .green : .secondary.opacity(0.35)
                             context.fill(Path(roundedRect: rect, cornerRadius: barWidth / 2), with: .color(color))
+
+                            if bar.kind == .actual && bar.isResetPoint {
+                                let markerWidth = max(3, barWidth + 1)
+                                let markerRect = CGRect(
+                                    x: x - (markerWidth / 2),
+                                    y: max(1, y - 2),
+                                    width: markerWidth,
+                                    height: 2
+                                )
+                                context.fill(
+                                    Path(roundedRect: markerRect, cornerRadius: 1),
+                                    with: .color(.orange.opacity(0.95))
+                                )
+                            }
                         }
                     }
                 } else {
@@ -517,7 +532,7 @@ private struct UsageHistoryGraphView: View {
                     .stroke(.secondary.opacity(0.5), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
 
                     GraphTooltipView(
-                        title: hovered.bar.kind == .gap ? "No data" : "\(Int((hovered.bar.remainingPercent ?? 0).rounded()))%",
+                        title: hoveredTitle(for: hovered.bar),
                         timestamp: hovered.bar.timestamp
                     )
                     .position(x: tooltipX(for: hovered.x, width: geo.size.width), y: 8)
@@ -563,7 +578,7 @@ private struct UsageHistoryGraphView: View {
         if sampledByIndex.isEmpty {
             return (0..<count).map { index in
                 let timestamp = start.addingTimeInterval((Double(index) + 0.5) * totalDuration / Double(count))
-                return RenderedBar(id: index, timestamp: timestamp, remainingPercent: nil, kind: .empty)
+                return RenderedBar(id: index, timestamp: timestamp, remainingPercent: nil, kind: .empty, isResetPoint: false)
             }
         }
 
@@ -593,7 +608,8 @@ private struct UsageHistoryGraphView: View {
                     id: index,
                     timestamp: sample.timestamp,
                     remainingPercent: min(max(sample.remainingPercent, 0), 100),
-                    kind: .actual
+                    kind: .actual,
+                    isResetPoint: sample.isResetPoint
                 )
             }
 
@@ -604,7 +620,7 @@ private struct UsageHistoryGraphView: View {
                 let leftSample = sampledByIndex[leftIndex],
                 let rightSample = sampledByIndex[rightIndex]
             else {
-                return RenderedBar(id: index, timestamp: timestamp, remainingPercent: nil, kind: .empty)
+                return RenderedBar(id: index, timestamp: timestamp, remainingPercent: nil, kind: .empty, isResetPoint: false)
             }
 
             let distance = Double(rightIndex - leftIndex)
@@ -614,7 +630,8 @@ private struct UsageHistoryGraphView: View {
                 id: index,
                 timestamp: timestamp,
                 remainingPercent: min(max(interpolated, 0), 100),
-                kind: .gap
+                kind: .gap,
+                isResetPoint: false
             )
         }
     }
@@ -637,6 +654,14 @@ private struct UsageHistoryGraphView: View {
     private func idealBarCount(for width: CGFloat) -> Int {
         let estimate = Int(floor(width / 4.0))
         return min(max(estimate, 24), 110)
+    }
+
+    private func hoveredTitle(for bar: RenderedBar) -> String {
+        if bar.kind == .gap {
+            return "No data"
+        }
+        let percent = "\(Int((bar.remainingPercent ?? 0).rounded()))%"
+        return bar.isResetPoint ? "Reset detected • \(percent)" : percent
     }
 
     private func tooltipX(for x: CGFloat, width: CGFloat) -> CGFloat {

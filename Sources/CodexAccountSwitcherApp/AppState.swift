@@ -170,7 +170,7 @@ final class AppState {
         let cutoff = Date().addingTimeInterval(-selected.duration)
         let filtered = points.filter { $0.timestamp >= cutoff }
 
-        return filtered.compactMap { point in
+        let series = filtered.compactMap { point -> (Date, Double)? in
             let usedPercent: Double?
             if selectedMetric == .fiveHour {
                 usedPercent = point.fiveHourUsedPercent ?? point.weeklyUsedPercent
@@ -179,10 +179,49 @@ final class AppState {
             }
 
             guard let usedPercent else { return nil }
-            return UsageSeriesPoint(
-                timestamp: point.timestamp,
-                remainingPercent: min(max(100 - usedPercent, 0), 100)
+            let remaining = min(max(100 - usedPercent, 0), 100)
+            return (point.timestamp, remaining)
+        }
+
+        guard !series.isEmpty else { return [] }
+        let jumpThreshold = resetJumpThreshold(for: selectedMetric)
+
+        var result: [UsageSeriesPoint] = []
+        result.reserveCapacity(series.count)
+
+        var previousRemaining: Double?
+        var previousTimestamp: Date?
+
+        for sample in series {
+            let isResetPoint: Bool
+            if let previousRemaining, let previousTimestamp {
+                let jump = sample.1 - previousRemaining
+                let sampleGap = sample.0.timeIntervalSince(previousTimestamp)
+                isResetPoint = jump >= jumpThreshold && sampleGap <= 8 * 60 * 60
+            } else {
+                isResetPoint = false
+            }
+
+            result.append(
+                UsageSeriesPoint(
+                    timestamp: sample.0,
+                    remainingPercent: sample.1,
+                    isResetPoint: isResetPoint
+                )
             )
+            previousRemaining = sample.1
+            previousTimestamp = sample.0
+        }
+
+        return result
+    }
+
+    private func resetJumpThreshold(for metric: UsageGraphMetric) -> Double {
+        switch metric {
+        case .fiveHour:
+            return 10
+        case .weekly:
+            return 6
         }
     }
 

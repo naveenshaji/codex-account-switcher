@@ -97,6 +97,7 @@ struct UsageHistoryEnvelope: Codable {
 struct UsageSeriesPoint: Identifiable, Hashable {
     let timestamp: Date
     let remainingPercent: Double
+    let isResetPoint: Bool
 
     var id: Date { timestamp }
 }
