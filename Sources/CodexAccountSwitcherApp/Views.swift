@@ -441,7 +441,7 @@ private struct AccountUsageDetailView: View {
         ZStack {
             if isGraphMode {
                 UsageHistoryGraphView(points: history, range: historyRange)
-                    .padding(.bottom, -2)
+                    .padding(.bottom, -8)
                     .transition(.opacity)
             } else {
                 UsageBarsView(usage: usage)
