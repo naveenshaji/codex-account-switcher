@@ -44,6 +44,27 @@ struct MenuContentView: View {
                     .font(.system(size: 13, weight: .medium))
                 Spacer()
                 HStack(spacing: 10) {
+                    if appState.isGraphMode {
+                        Picker("Range", selection: $appState.selectedHistoryRange) {
+                            ForEach(UsageHistoryRange.allCases) { range in
+                                Text(range.label).tag(range)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .labelsHidden()
+                        .frame(width: 62)
+                    }
+
+                    HoverIconButton(
+                        systemImage: "chart.xyaxis.line",
+                        helpText: appState.isGraphMode ? "Show usage bars" : "Show history graph",
+                        isSelected: appState.isGraphMode
+                    ) {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            appState.isGraphMode.toggle()
+                        }
+                    }
+
                     HoverIconButton(
                         systemImage: "arrow.clockwise",
                         helpText: "Refresh usage",
@@ -140,6 +161,7 @@ struct MenuContentView: View {
     private func profileMenuRow(_ profile: CodexAuthProfile) -> some View {
         let isActive = appState.activeProfileID == profile.id
         let usage = appState.usageByProfileID[profile.id]
+        let history = appState.historySeries(for: profile.id)
         let plan = profile.planType?.trimmedNilIfEmpty ?? usage?.planType?.trimmedNilIfEmpty
 
         VStack(alignment: .leading, spacing: 6) {
@@ -183,7 +205,11 @@ struct MenuContentView: View {
                 }
             }
 
-            UsageBarsView(usage: usage)
+            AccountUsageDetailView(
+                usage: usage,
+                history: history,
+                isGraphMode: appState.isGraphMode
+            )
 
             if let actionError = appState.actionErrorByProfileID[profile.id] {
                 Text(actionError)
@@ -311,6 +337,7 @@ private struct HoverIconButton: View {
     let systemImage: String
     let helpText: String
     var isLoading = false
+    var isSelected = false
     var isDisabled = false
     let action: () -> Void
     @State private var isHovered = false
@@ -332,9 +359,10 @@ private struct HoverIconButton: View {
                 .padding(6)
                 .background(
                     Circle()
-                        .fill(isHovered ? Color.secondary.opacity(0.18) : Color.clear)
+                        .fill((isHovered || isSelected) ? Color.secondary.opacity(isSelected ? 0.24 : 0.18) : Color.clear)
                 )
                 .animation(.easeInOut(duration: 0.15), value: isHovered)
+                .animation(.easeInOut(duration: 0.15), value: isSelected)
         }
         .buttonStyle(.plain)
         .disabled(isDisabled)
@@ -355,6 +383,149 @@ private struct SubscriptionBadge: View {
             .padding(.horizontal, 6)
             .padding(.vertical, 2)
             .background(.secondary.opacity(0.12), in: Capsule())
+    }
+}
+
+private struct AccountUsageDetailView: View {
+    let usage: UsageSnapshot?
+    let history: [UsageSeriesPoint]
+    let isGraphMode: Bool
+
+    var body: some View {
+        ZStack {
+            if isGraphMode {
+                UsageHistoryGraphView(points: history)
+                    .transition(.opacity)
+            } else {
+                UsageBarsView(usage: usage)
+                    .transition(.opacity)
+            }
+        }
+        .frame(height: 42)
+        .animation(.easeInOut(duration: 0.18), value: isGraphMode)
+    }
+}
+
+private struct UsageHistoryGraphView: View {
+    let points: [UsageSeriesPoint]
+    @State private var hoverLocation: CGPoint?
+
+    private struct RenderedPoint {
+        let model: UsageSeriesPoint
+        let point: CGPoint
+    }
+
+    var body: some View {
+        GeometryReader { geo in
+            let sorted = points.sorted(by: { $0.timestamp < $1.timestamp })
+            let rendered = renderedPoints(from: sorted, in: geo.size)
+
+            ZStack(alignment: .topLeading) {
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(.secondary.opacity(0.08))
+
+                if rendered.count >= 2 {
+                    Path { path in
+                        path.move(to: rendered[0].point)
+                        for sample in rendered.dropFirst() {
+                            path.addLine(to: sample.point)
+                        }
+                    }
+                    .stroke(.green, style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+                } else if let single = rendered.first {
+                    Circle()
+                        .fill(.green)
+                        .frame(width: 6, height: 6)
+                        .position(single.point)
+                } else {
+                    Text("Collecting history…")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                }
+
+                if let hoverLocation,
+                   let nearest = nearestSample(toX: hoverLocation.x, in: rendered) {
+                    Path { path in
+                        path.move(to: CGPoint(x: nearest.point.x, y: 0))
+                        path.addLine(to: CGPoint(x: nearest.point.x, y: geo.size.height))
+                    }
+                    .stroke(.secondary.opacity(0.5), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
+
+                    Circle()
+                        .fill(.green)
+                        .frame(width: 7, height: 7)
+                        .position(nearest.point)
+
+                    GraphTooltipView(point: nearest.model)
+                        .position(x: tooltipX(for: nearest.point.x, width: geo.size.width), y: 8)
+                }
+            }
+            .clipShape(.rect(cornerRadius: 6))
+            .contentShape(Rectangle())
+            .onContinuousHover { phase in
+                switch phase {
+                case .active(let location):
+                    hoverLocation = location
+                case .ended:
+                    hoverLocation = nil
+                }
+            }
+        }
+    }
+
+    private func renderedPoints(from points: [UsageSeriesPoint], in size: CGSize) -> [RenderedPoint] {
+        guard !points.isEmpty else { return [] }
+
+        let minDate = points.first!.timestamp
+        let maxDate = points.last!.timestamp
+        let total = max(maxDate.timeIntervalSince(minDate), 1)
+        let width = max(size.width, 1)
+        let height = max(size.height, 1)
+        let topPadding: CGFloat = 4
+        let bottomPadding: CGFloat = 4
+        let drawableHeight = max(height - topPadding - bottomPadding, 1)
+
+        return points.map { sample in
+            let x = CGFloat(sample.timestamp.timeIntervalSince(minDate) / total) * width
+            let yRatio = CGFloat(min(max(sample.usedPercent, 0), 100) / 100)
+            let y = topPadding + (1 - yRatio) * drawableHeight
+            return RenderedPoint(model: sample, point: CGPoint(x: x, y: y))
+        }
+    }
+
+    private func nearestSample(toX x: CGFloat, in rendered: [RenderedPoint]) -> RenderedPoint? {
+        rendered.min(by: { abs($0.point.x - x) < abs($1.point.x - x) })
+    }
+
+    private func tooltipX(for x: CGFloat, width: CGFloat) -> CGFloat {
+        let minX: CGFloat = 52
+        let maxX = max(width - 52, minX)
+        return min(max(x, minX), maxX)
+    }
+}
+
+private struct GraphTooltipView: View {
+    let point: UsageSeriesPoint
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Text("\(Int(point.usedPercent.rounded()))%")
+                .font(.caption2.monospacedDigit())
+                .foregroundStyle(.primary)
+            Text(timeString(from: point.timestamp))
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(.ultraThinMaterial, in: Capsule())
+    }
+
+    private func timeString(from date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMM d, HH:mm"
+        return formatter.string(from: date)
     }
 }
 

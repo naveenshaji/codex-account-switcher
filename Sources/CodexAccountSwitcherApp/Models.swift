@@ -84,6 +84,65 @@ struct ProfilesEnvelope: Codable {
     var activeProfileID: UUID?
 }
 
+struct UsageHistoryPoint: Codable, Hashable {
+    var timestamp: Date
+    var fiveHourUsedPercent: Double?
+    var weeklyUsedPercent: Double?
+}
+
+struct UsageHistoryEnvelope: Codable {
+    var pointsByProfileID: [UUID: [UsageHistoryPoint]]
+}
+
+struct UsageSeriesPoint: Identifiable, Hashable {
+    let timestamp: Date
+    let usedPercent: Double
+
+    var id: Date { timestamp }
+}
+
+enum UsageHistoryRange: String, CaseIterable, Codable, Identifiable {
+    case h1
+    case h5
+    case h12
+    case h24
+    case d7
+    case d30
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .h1: return "1h"
+        case .h5: return "5h"
+        case .h12: return "12h"
+        case .h24: return "24h"
+        case .d7: return "7d"
+        case .d30: return "30d"
+        }
+    }
+
+    var duration: TimeInterval {
+        switch self {
+        case .h1: return 60 * 60
+        case .h5: return 5 * 60 * 60
+        case .h12: return 12 * 60 * 60
+        case .h24: return 24 * 60 * 60
+        case .d7: return 7 * 24 * 60 * 60
+        case .d30: return 30 * 24 * 60 * 60
+        }
+    }
+
+    var prefersFiveHourWindow: Bool {
+        switch self {
+        case .h1, .h5:
+            return true
+        default:
+            return false
+        }
+    }
+}
+
 extension CodexAuthProfile {
     var displayEmail: String {
         if let email = email?.trimmedNilIfEmpty {

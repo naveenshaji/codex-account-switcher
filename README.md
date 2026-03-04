@@ -17,6 +17,7 @@ Codex (desktop + CLI) reads auth from `~/.codex/auth.json`. This app keeps multi
   - 5-hour window
   - weekly window
   - shown as `% remaining` (green -> yellow -> red as remaining drops)
+- Historical local usage graphs per account with selectable ranges (`1h`, `5h`, `12h`, `24h`, `7d`, `30d`).
 - Top-level menu actions include:
   - Add account via ChatGPT OAuth
   - Open automatically at startup (toggle row)
@@ -76,7 +77,7 @@ swift run CodexAccountSwitcherApp
 
 - Existing Codex app/CLI sessions do not hot-reload auth; restart/new session is required.
 - Assumes Codex uses file-backed auth (`~/.codex/auth.json`).
-- No automatic periodic refresh yet; usage updates happen on app refresh actions.
+- Historical graphs use locally sampled data (no official ChatGPT/Codex historical timeline API); quality improves as samples accumulate.
 
 ## Project layout
 

@@ -7,24 +7,31 @@ final class AppState {
     private let profilesStore = ProfilesStore()
     private let authStore = CodexAuthStore()
     private let usageService = UsageService()
+    private let usageHistoryStore = UsageHistoryStore()
     private let launchAtLoginManager = LaunchAtLoginManager()
+    private var backgroundRefreshTask: Task<Void, Never>?
 
     var profiles: [CodexAuthProfile] = []
     var activeProfileID: UUID?
     var usageByProfileID: [UUID: UsageSnapshot] = [:]
+    var usageHistoryByProfileID: [UUID: [UsageHistoryPoint]] = [:]
     var usageErrorByProfileID: [UUID: String] = [:]
     var actionErrorByProfileID: [UUID: String] = [:]
 
     var isRefreshingUsage = false
     var isSwitching = false
     var isAddingOAuthProfile = false
+    var isGraphMode = false
+    var selectedHistoryRange: UsageHistoryRange = .h24
     var openAtLoginEnabled = false
     var lastErrorMessage: String?
 
     init() {
         loadProfiles()
+        loadUsageHistory()
         syncCurrentAuthProfileIfAvailable()
         refreshOpenAtLoginState()
+        startBackgroundRefreshLoop()
     }
 
     var sortedProfiles: [CodexAuthProfile] {
@@ -85,6 +92,7 @@ final class AppState {
     func deleteProfile(id: UUID) {
         profiles.removeAll { $0.id == id }
         usageByProfileID[id] = nil
+        usageHistoryByProfileID[id] = nil
         usageErrorByProfileID[id] = nil
         actionErrorByProfileID[id] = nil
 
@@ -93,6 +101,7 @@ final class AppState {
         }
 
         saveProfiles()
+        saveUsageHistory()
     }
 
     @discardableResult
@@ -147,6 +156,30 @@ final class AppState {
         openAtLoginEnabled = launchAtLoginManager.isEnabled()
     }
 
+    func historySeries(for profileID: UUID, range: UsageHistoryRange? = nil) -> [UsageSeriesPoint] {
+        let selected = range ?? selectedHistoryRange
+        let points = (usageHistoryByProfileID[profileID] ?? []).sorted(by: { $0.timestamp < $1.timestamp })
+        guard !points.isEmpty else { return [] }
+
+        let cutoff = Date().addingTimeInterval(-selected.duration)
+        let filtered = points.filter { $0.timestamp >= cutoff }
+
+        return filtered.compactMap { point in
+            let value: Double?
+            if selected.prefersFiveHourWindow {
+                value = point.fiveHourUsedPercent ?? point.weeklyUsedPercent
+            } else {
+                value = point.weeklyUsedPercent ?? point.fiveHourUsedPercent
+            }
+
+            guard let value else { return nil }
+            return UsageSeriesPoint(
+                timestamp: point.timestamp,
+                usedPercent: min(max(value, 0), 100)
+            )
+        }
+    }
+
     func setOpenAtLoginEnabled(_ enabled: Bool) {
         do {
             try launchAtLoginManager.setEnabled(enabled)
@@ -154,6 +187,37 @@ final class AppState {
         } catch {
             openAtLoginEnabled = launchAtLoginManager.isEnabled()
             lastErrorMessage = "Failed to update startup setting: \(error.localizedDescription)"
+        }
+    }
+
+    private func loadUsageHistory() {
+        do {
+            let envelope = try usageHistoryStore.load()
+            usageHistoryByProfileID = envelope.pointsByProfileID
+        } catch {
+            usageHistoryByProfileID = [:]
+        }
+    }
+
+    private func saveUsageHistory() {
+        do {
+            let envelope = UsageHistoryEnvelope(pointsByProfileID: usageHistoryByProfileID)
+            try usageHistoryStore.save(envelope)
+        } catch {
+            // Keep this silent in UI to avoid noisy persistence errors for background polling.
+        }
+    }
+
+    private func startBackgroundRefreshLoop() {
+        backgroundRefreshTask?.cancel()
+        backgroundRefreshTask = Task { [weak self] in
+            guard let self else { return }
+            await self.refreshUsageForAllProfiles()
+
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 300_000_000_000) // 5 minutes
+                await self.refreshUsageForAllProfiles()
+            }
         }
     }
 
@@ -167,6 +231,7 @@ final class AppState {
 
         let currentProfiles = profiles
         let usageService = self.usageService
+        var historyChanged = false
 
         await withTaskGroup(of: (UUID, Result<UsageSnapshot, Error>).self) { group in
             for profile in currentProfiles {
@@ -185,6 +250,9 @@ final class AppState {
                 case .success(let snapshot):
                     usageByProfileID[profileID] = snapshot
                     usageErrorByProfileID[profileID] = nil
+                    if recordHistoryPoint(profileID: profileID, snapshot: snapshot) {
+                        historyChanged = true
+                    }
                     if let idx = profiles.firstIndex(where: { $0.id == profileID }),
                        profiles[idx].planType?.trimmedNilIfEmpty == nil {
                         profiles[idx].planType = snapshot.planType
@@ -198,6 +266,31 @@ final class AppState {
         }
 
         saveProfiles()
+        if historyChanged {
+            saveUsageHistory()
+        }
+    }
+
+    @discardableResult
+    private func recordHistoryPoint(profileID: UUID, snapshot: UsageSnapshot) -> Bool {
+        let point = UsageHistoryPoint(
+            timestamp: Date(),
+            fiveHourUsedPercent: snapshot.fiveHourWindow?.normalizedUsedPercent,
+            weeklyUsedPercent: snapshot.weeklyWindow?.normalizedUsedPercent
+        )
+
+        var history = usageHistoryByProfileID[profileID] ?? []
+        if let last = history.last,
+           abs(last.timestamp.timeIntervalSince(point.timestamp)) < 120 {
+            history[history.count - 1] = point
+        } else {
+            history.append(point)
+        }
+
+        let cutoff = Date().addingTimeInterval(-(35 * 24 * 60 * 60))
+        history.removeAll { $0.timestamp < cutoff }
+        usageHistoryByProfileID[profileID] = history
+        return true
     }
 
     private func isCancellationError(_ error: Error) -> Bool {
