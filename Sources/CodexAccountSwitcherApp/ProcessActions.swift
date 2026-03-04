@@ -2,20 +2,14 @@ import AppKit
 import Foundation
 
 enum ProcessActions {
-    static func isCodexDesktopRunning() -> Bool {
-        let knownBundleIDs: Set<String> = [
-            "com.openai.codex",
-            "com.openai.chatgpt.codex",
-            "com.openai.chatgpt"
-        ]
+    private static let knownBundleIDs: Set<String> = [
+        "com.openai.codex",
+        "com.openai.chatgpt.codex",
+        "com.openai.chatgpt"
+    ]
 
-        return NSWorkspace.shared.runningApplications.contains { app in
-            if let bundleID = app.bundleIdentifier,
-               knownBundleIDs.contains(bundleID) {
-                return true
-            }
-            return app.localizedName == "Codex"
-        }
+    static func isCodexDesktopRunning() -> Bool {
+        !runningCodexDesktopApps().isEmpty
     }
 
     @discardableResult
@@ -25,12 +19,22 @@ enum ProcessActions {
 
     @discardableResult
     static func restartCodexDesktopApp() -> Int32 {
-        if !isCodexDesktopRunning() {
+        if runningCodexDesktopApps().isEmpty {
             return startCodexDesktopApp()
         }
 
-        _ = run("/usr/bin/osascript", ["-e", "tell application \"Codex\" to quit"])
-        usleep(700_000)
+        for app in runningCodexDesktopApps() {
+            _ = app.terminate()
+        }
+
+        if !waitForCodexDesktopToStop(timeout: 4.0) {
+            for app in runningCodexDesktopApps() {
+                _ = app.forceTerminate()
+            }
+            _ = waitForCodexDesktopToStop(timeout: 1.5)
+        }
+
+        usleep(200_000)
         return startCodexDesktopApp()
     }
 
@@ -60,5 +64,26 @@ enum ProcessActions {
         } catch {
             return 1
         }
+    }
+
+    private static func runningCodexDesktopApps() -> [NSRunningApplication] {
+        NSWorkspace.shared.runningApplications.filter { app in
+            if let bundleID = app.bundleIdentifier,
+               knownBundleIDs.contains(bundleID) {
+                return true
+            }
+            return app.localizedName == "Codex"
+        }
+    }
+
+    private static func waitForCodexDesktopToStop(timeout: TimeInterval) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if runningCodexDesktopApps().isEmpty {
+                return true
+            }
+            usleep(100_000)
+        }
+        return runningCodexDesktopApps().isEmpty
     }
 }

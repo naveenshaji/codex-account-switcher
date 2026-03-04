@@ -478,7 +478,7 @@ private struct UsageHistoryGraphView: View {
             let hovered = hoveredBar(at: hoverLocation, in: renderedBars, size: geo.size)
 
             ZStack(alignment: .topLeading) {
-                RoundedRectangle(cornerRadius: 6)
+                Rectangle()
                     .fill(.secondary.opacity(0.08))
 
                 if renderedBars.contains(where: { $0.kind != .empty }) {
@@ -539,7 +539,7 @@ private struct UsageHistoryGraphView: View {
                     .position(x: tooltipX(for: hovered.x, width: geo.size.width), y: 8)
                 }
             }
-            .clipShape(.rect(cornerRadius: 6))
+            .clipShape(Rectangle())
             .contentShape(Rectangle())
             .onContinuousHover { phase in
                 switch phase {
