@@ -457,6 +457,7 @@ private struct UsageHistoryGraphView: View {
     let points: [UsageSeriesPoint]
     let range: UsageHistoryRange
     @State private var hoverLocation: CGPoint?
+    @State private var didInitialAutoScroll = false
 
     private enum BarKind {
         case actual
@@ -475,101 +476,124 @@ private struct UsageHistoryGraphView: View {
 
     var body: some View {
         GeometryReader { geo in
-            let renderedBars = renderedBars(in: geo.size)
-            let hovered = hoveredBar(at: hoverLocation, in: renderedBars, size: geo.size)
-            let predictionStartIndex = renderedBars.firstIndex(where: { $0.kind == .prediction })
+            let viewportSize = geo.size
+            let graphContentWidth = max(viewportSize.width, viewportSize.width * 1.9)
 
-            ZStack(alignment: .topLeading) {
-                Rectangle()
-                    .fill(.secondary.opacity(0.08))
+            ScrollViewReader { proxy in
+                ScrollView(.horizontal) {
+                    let renderSize = CGSize(width: graphContentWidth, height: viewportSize.height)
+                    let renderedBars = renderedBars(in: renderSize)
+                    let hovered = hoveredBar(at: hoverLocation, in: renderedBars, size: renderSize)
+                    let predictionStartIndex = renderedBars.firstIndex(where: { $0.kind == .prediction })
 
-                if renderedBars.contains(where: { $0.kind != .empty }) {
-                    Canvas { context, size in
-                        let count = max(renderedBars.count, 1)
-                        let step = size.width / CGFloat(count)
-                        let barWidth = max(1, min(2, step * 0.55))
-                        let topPadding: CGFloat = 2
-                        let bottomPadding: CGFloat = 0
-                        let drawableHeight = max(size.height - topPadding - bottomPadding, 1)
+                    ZStack(alignment: .topLeading) {
+                        Rectangle()
+                            .fill(.secondary.opacity(0.08))
 
-                        for (index, bar) in renderedBars.enumerated() {
-                            guard bar.kind != .empty, let remainingPercent = bar.remainingPercent else {
-                                continue
+                        if renderedBars.contains(where: { $0.kind != .empty }) {
+                            Canvas { context, size in
+                                let count = max(renderedBars.count, 1)
+                                let step = size.width / CGFloat(count)
+                                let barWidth = max(1, min(2, step * 0.55))
+                                let topPadding: CGFloat = 2
+                                let bottomPadding: CGFloat = 0
+                                let drawableHeight = max(size.height - topPadding - bottomPadding, 1)
+
+                                for (index, bar) in renderedBars.enumerated() {
+                                    guard bar.kind != .empty, let remainingPercent = bar.remainingPercent else {
+                                        continue
+                                    }
+
+                                    let ratio = CGFloat(min(max(remainingPercent, 0), 100) / 100)
+                                    let barHeight = max(1, ratio * drawableHeight)
+                                    let x = (CGFloat(index) + 0.5) * step
+                                    let y = topPadding + (drawableHeight - barHeight)
+                                    let rect = CGRect(x: x - (barWidth / 2), y: y, width: barWidth, height: barHeight)
+                                    let color: Color
+                                    switch bar.kind {
+                                    case .actual:
+                                        color = usageColor(forRemaining: remainingPercent)
+                                    case .gap:
+                                        color = .secondary.opacity(0.35)
+                                    case .prediction:
+                                        color = usageColor(forRemaining: remainingPercent).opacity(0.55)
+                                    case .empty:
+                                        color = .clear
+                                    }
+                                    context.fill(Path(roundedRect: rect, cornerRadius: barWidth / 2), with: .color(color))
+
+                                    if bar.kind == .actual && bar.isResetPoint {
+                                        let markerWidth = max(3, barWidth + 1)
+                                        let markerRect = CGRect(
+                                            x: x - (markerWidth / 2),
+                                            y: max(1, y - 2),
+                                            width: markerWidth,
+                                            height: 2
+                                        )
+                                        context.fill(
+                                            Path(roundedRect: markerRect, cornerRadius: 1),
+                                            with: .color(.orange.opacity(0.95))
+                                        )
+                                    }
+                                }
                             }
 
-                            let ratio = CGFloat(min(max(remainingPercent, 0), 100) / 100)
-                            let barHeight = max(1, ratio * drawableHeight)
-                            let x = (CGFloat(index) + 0.5) * step
-                            let y = topPadding + (drawableHeight - barHeight)
-                            let rect = CGRect(x: x - (barWidth / 2), y: y, width: barWidth, height: barHeight)
-                            let color: Color
-                            switch bar.kind {
-                            case .actual:
-                                color = .green
-                            case .gap:
-                                color = .secondary.opacity(0.35)
-                            case .prediction:
-                                color = .green.opacity(0.5)
-                            case .empty:
-                                color = .clear
+                            if let predictionStartIndex {
+                                let count = max(renderedBars.count, 1)
+                                let step = renderSize.width / CGFloat(count)
+                                let boundaryX = CGFloat(predictionStartIndex) * step
+                                Path { path in
+                                    path.move(to: CGPoint(x: boundaryX, y: 0))
+                                    path.addLine(to: CGPoint(x: boundaryX, y: renderSize.height))
+                                }
+                                .stroke(.secondary.opacity(0.25), style: StrokeStyle(lineWidth: 1, dash: [2, 3]))
                             }
-                            context.fill(Path(roundedRect: rect, cornerRadius: barWidth / 2), with: .color(color))
+                        } else {
+                            Text("Collecting history…")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                        }
 
-                            if bar.kind == .actual && bar.isResetPoint {
-                                let markerWidth = max(3, barWidth + 1)
-                                let markerRect = CGRect(
-                                    x: x - (markerWidth / 2),
-                                    y: max(1, y - 2),
-                                    width: markerWidth,
-                                    height: 2
-                                )
-                                context.fill(
-                                    Path(roundedRect: markerRect, cornerRadius: 1),
-                                    with: .color(.orange.opacity(0.95))
-                                )
+                        if let hovered {
+                            Path { path in
+                                path.move(to: CGPoint(x: hovered.x, y: 0))
+                                path.addLine(to: CGPoint(x: hovered.x, y: renderSize.height))
                             }
+                            .stroke(.secondary.opacity(0.5), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
+
+                            GraphTooltipView(
+                                title: hoveredTitle(for: hovered.bar),
+                                timestamp: hovered.bar.timestamp
+                            )
+                            .position(x: tooltipX(for: hovered.x, width: renderSize.width), y: 8)
                         }
                     }
-
-                    if let predictionStartIndex {
-                        let count = max(renderedBars.count, 1)
-                        let step = geo.size.width / CGFloat(count)
-                        let boundaryX = CGFloat(predictionStartIndex) * step
-                        Path { path in
-                            path.move(to: CGPoint(x: boundaryX, y: 0))
-                            path.addLine(to: CGPoint(x: boundaryX, y: geo.size.height))
+                    .frame(width: renderSize.width, height: renderSize.height)
+                    .clipShape(Rectangle())
+                    .contentShape(Rectangle())
+                    .onContinuousHover { phase in
+                        switch phase {
+                        case .active(let location):
+                            hoverLocation = location
+                        case .ended:
+                            hoverLocation = nil
                         }
-                        .stroke(.secondary.opacity(0.25), style: StrokeStyle(lineWidth: 1, dash: [2, 3]))
                     }
-                } else {
-                    Text("Collecting history…")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                    .id("history-graph-content")
                 }
-
-                if let hovered {
-                    Path { path in
-                        path.move(to: CGPoint(x: hovered.x, y: 0))
-                        path.addLine(to: CGPoint(x: hovered.x, y: geo.size.height))
+                .scrollIndicators(.hidden)
+                .onAppear {
+                    guard !didInitialAutoScroll else { return }
+                    DispatchQueue.main.async {
+                        proxy.scrollTo("history-graph-content", anchor: .trailing)
+                        didInitialAutoScroll = true
                     }
-                    .stroke(.secondary.opacity(0.5), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
-
-                    GraphTooltipView(
-                        title: hoveredTitle(for: hovered.bar),
-                        timestamp: hovered.bar.timestamp
-                    )
-                    .position(x: tooltipX(for: hovered.x, width: geo.size.width), y: 8)
                 }
-            }
-            .clipShape(Rectangle())
-            .contentShape(Rectangle())
-            .onContinuousHover { phase in
-                switch phase {
-                case .active(let location):
-                    hoverLocation = location
-                case .ended:
-                    hoverLocation = nil
+                .onChange(of: range) { _, _ in
+                    DispatchQueue.main.async {
+                        proxy.scrollTo("history-graph-content", anchor: .trailing)
+                    }
                 }
             }
         }
@@ -579,7 +603,7 @@ private struct UsageHistoryGraphView: View {
         let totalCount = idealBarCount(for: size.width)
         guard totalCount > 0 else { return [] }
 
-        let forecastCount = max(4, min(18, Int(Double(totalCount) * 0.18)))
+        let forecastCount = max(6, min(28, Int(Double(totalCount) * 0.24)))
         let historicalCount = max(totalCount - forecastCount, 1)
 
         let end = Date()
@@ -729,6 +753,17 @@ private struct UsageHistoryGraphView: View {
         }
         let percent = "\(Int((bar.remainingPercent ?? 0).rounded()))%"
         return bar.isResetPoint ? "Reset detected • \(percent)" : percent
+    }
+
+    private func usageColor(forRemaining remaining: Double) -> Color {
+        switch remaining {
+        case ..<20:
+            return .red
+        case ..<40:
+            return .yellow
+        default:
+            return .green
+        }
     }
 
     private struct PredictionModel {
