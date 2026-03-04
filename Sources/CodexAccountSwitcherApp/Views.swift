@@ -614,13 +614,15 @@ private struct UsageHistoryGraphView: View {
         let totalCount = idealBarCount(for: size.width)
         guard totalCount > 0 else { return [] }
 
-        let forecastCount = max(6, min(28, Int(Double(totalCount) * 0.24)))
-        let historicalCount = max(totalCount - forecastCount, 1)
-
         let end = Date()
         let start = end.addingTimeInterval(-range.duration)
         let totalDuration = max(range.duration, 1)
         let forecastDuration = predictionHorizon(for: range)
+        let combinedDuration = totalDuration + forecastDuration
+
+        var forecastCount = Int(round(Double(totalCount) * (forecastDuration / combinedDuration)))
+        forecastCount = max(2, min(forecastCount, totalCount - 1))
+        let historicalCount = max(totalCount - forecastCount, 1)
         let sortedPoints = points.sorted(by: { $0.timestamp < $1.timestamp })
 
         var sampledByIndex: [Int: UsageSeriesPoint] = [:]
