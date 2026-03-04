@@ -461,6 +461,7 @@ private struct UsageHistoryGraphView: View {
     private enum BarKind {
         case actual
         case gap
+        case prediction
         case empty
     }
 
@@ -476,6 +477,7 @@ private struct UsageHistoryGraphView: View {
         GeometryReader { geo in
             let renderedBars = renderedBars(in: geo.size)
             let hovered = hoveredBar(at: hoverLocation, in: renderedBars, size: geo.size)
+            let predictionStartIndex = renderedBars.firstIndex(where: { $0.kind == .prediction })
 
             ZStack(alignment: .topLeading) {
                 Rectangle()
@@ -500,7 +502,17 @@ private struct UsageHistoryGraphView: View {
                             let x = (CGFloat(index) + 0.5) * step
                             let y = topPadding + (drawableHeight - barHeight)
                             let rect = CGRect(x: x - (barWidth / 2), y: y, width: barWidth, height: barHeight)
-                            let color: Color = bar.kind == .actual ? .green : .secondary.opacity(0.35)
+                            let color: Color
+                            switch bar.kind {
+                            case .actual:
+                                color = .green
+                            case .gap:
+                                color = .secondary.opacity(0.35)
+                            case .prediction:
+                                color = .green.opacity(0.5)
+                            case .empty:
+                                color = .clear
+                            }
                             context.fill(Path(roundedRect: rect, cornerRadius: barWidth / 2), with: .color(color))
 
                             if bar.kind == .actual && bar.isResetPoint {
@@ -517,6 +529,17 @@ private struct UsageHistoryGraphView: View {
                                 )
                             }
                         }
+                    }
+
+                    if let predictionStartIndex {
+                        let count = max(renderedBars.count, 1)
+                        let step = geo.size.width / CGFloat(count)
+                        let boundaryX = CGFloat(predictionStartIndex) * step
+                        Path { path in
+                            path.move(to: CGPoint(x: boundaryX, y: 0))
+                            path.addLine(to: CGPoint(x: boundaryX, y: geo.size.height))
+                        }
+                        .stroke(.secondary.opacity(0.25), style: StrokeStyle(lineWidth: 1, dash: [2, 3]))
                     }
                 } else {
                     Text("Collecting history…")
@@ -553,20 +576,24 @@ private struct UsageHistoryGraphView: View {
     }
 
     private func renderedBars(in size: CGSize) -> [RenderedBar] {
-        let count = idealBarCount(for: size.width)
-        guard count > 0 else { return [] }
+        let totalCount = idealBarCount(for: size.width)
+        guard totalCount > 0 else { return [] }
+
+        let forecastCount = max(4, min(18, Int(Double(totalCount) * 0.18)))
+        let historicalCount = max(totalCount - forecastCount, 1)
 
         let end = Date()
         let start = end.addingTimeInterval(-range.duration)
         let totalDuration = max(range.duration, 1)
+        let forecastDuration = predictionHorizon(for: range)
         let sortedPoints = points.sorted(by: { $0.timestamp < $1.timestamp })
 
         var sampledByIndex: [Int: UsageSeriesPoint] = [:]
         for sample in sortedPoints {
             guard sample.timestamp >= start, sample.timestamp <= end else { continue }
             let progress = sample.timestamp.timeIntervalSince(start) / totalDuration
-            var index = Int(floor(progress * Double(count)))
-            index = min(max(index, 0), count - 1)
+            var index = Int(floor(progress * Double(historicalCount)))
+            index = min(max(index, 0), historicalCount - 1)
             if let existing = sampledByIndex[index] {
                 if sample.timestamp > existing.timestamp {
                     sampledByIndex[index] = sample
@@ -576,33 +603,42 @@ private struct UsageHistoryGraphView: View {
             }
         }
 
+        let actualHistoricalPoints = sampledByIndex.values.sorted(by: { $0.timestamp < $1.timestamp })
+        let predictionModel = predictionModel(from: actualHistoricalPoints)
+
         if sampledByIndex.isEmpty {
-            return (0..<count).map { index in
-                let timestamp = start.addingTimeInterval((Double(index) + 0.5) * totalDuration / Double(count))
-                return RenderedBar(id: index, timestamp: timestamp, remainingPercent: nil, kind: .empty, isResetPoint: false)
+            return (0..<totalCount).map { index in
+                if index < historicalCount {
+                    let timestamp = start.addingTimeInterval((Double(index) + 0.5) * totalDuration / Double(historicalCount))
+                    return RenderedBar(id: index, timestamp: timestamp, remainingPercent: nil, kind: .empty, isResetPoint: false)
+                } else {
+                    let forecastIndex = index - historicalCount
+                    let timestamp = end.addingTimeInterval((Double(forecastIndex) + 1) * forecastDuration / Double(max(forecastCount, 1)))
+                    return RenderedBar(id: index, timestamp: timestamp, remainingPercent: nil, kind: .empty, isResetPoint: false)
+                }
             }
         }
 
-        var nearestLeft: [Int?] = Array(repeating: nil, count: count)
+        var nearestLeft: [Int?] = Array(repeating: nil, count: historicalCount)
         var lastSeen: Int?
-        for index in 0..<count {
+        for index in 0..<historicalCount {
             if sampledByIndex[index] != nil {
                 lastSeen = index
             }
             nearestLeft[index] = lastSeen
         }
 
-        var nearestRight: [Int?] = Array(repeating: nil, count: count)
+        var nearestRight: [Int?] = Array(repeating: nil, count: historicalCount)
         var nextSeen: Int?
-        for index in stride(from: count - 1, through: 0, by: -1) {
+        for index in stride(from: historicalCount - 1, through: 0, by: -1) {
             if sampledByIndex[index] != nil {
                 nextSeen = index
             }
             nearestRight[index] = nextSeen
         }
 
-        return (0..<count).map { index in
-            let timestamp = start.addingTimeInterval((Double(index) + 0.5) * totalDuration / Double(count))
+        let historicalBars: [RenderedBar] = (0..<historicalCount).map { index in
+            let timestamp = start.addingTimeInterval((Double(index) + 0.5) * totalDuration / Double(historicalCount))
 
             if let sample = sampledByIndex[index] {
                 return RenderedBar(
@@ -635,6 +671,33 @@ private struct UsageHistoryGraphView: View {
                 isResetPoint: false
             )
         }
+
+        let forecastBars: [RenderedBar] = (0..<forecastCount).map { forecastIndex in
+            let absoluteIndex = historicalCount + forecastIndex
+            let timestamp = end.addingTimeInterval((Double(forecastIndex) + 1) * forecastDuration / Double(max(forecastCount, 1)))
+
+            guard let predictionModel else {
+                return RenderedBar(
+                    id: absoluteIndex,
+                    timestamp: timestamp,
+                    remainingPercent: nil,
+                    kind: .empty,
+                    isResetPoint: false
+                )
+            }
+
+            let dt = timestamp.timeIntervalSince(predictionModel.anchorTimestamp)
+            let projected = predictionModel.anchorRemaining + (predictionModel.slopePerSecond * dt)
+            return RenderedBar(
+                id: absoluteIndex,
+                timestamp: timestamp,
+                remainingPercent: min(max(projected, 0), 100),
+                kind: .prediction,
+                isResetPoint: false
+            )
+        }
+
+        return historicalBars + forecastBars
     }
 
     private func hoveredBar(
@@ -661,8 +724,90 @@ private struct UsageHistoryGraphView: View {
         if bar.kind == .gap {
             return "No data"
         }
+        if bar.kind == .prediction {
+            return "Predicted \(Int((bar.remainingPercent ?? 0).rounded()))%"
+        }
         let percent = "\(Int((bar.remainingPercent ?? 0).rounded()))%"
         return bar.isResetPoint ? "Reset detected • \(percent)" : percent
+    }
+
+    private struct PredictionModel {
+        let anchorTimestamp: Date
+        let anchorRemaining: Double
+        let slopePerSecond: Double
+    }
+
+    private func predictionModel(from actualPoints: [UsageSeriesPoint]) -> PredictionModel? {
+        guard actualPoints.count >= 2, let anchor = actualPoints.last else {
+            return nil
+        }
+
+        let lookback: TimeInterval
+        switch range {
+        case .h1, .h5:
+            lookback = 90 * 60
+        case .h12, .h24:
+            lookback = 6 * 60 * 60
+        case .d7, .d30:
+            lookback = 24 * 60 * 60
+        }
+
+        let recent = actualPoints.filter {
+            anchor.timestamp.timeIntervalSince($0.timestamp) <= lookback
+        }
+
+        guard recent.count >= 2 else {
+            return PredictionModel(
+                anchorTimestamp: anchor.timestamp,
+                anchorRemaining: anchor.remainingPercent,
+                slopePerSecond: 0
+            )
+        }
+
+        var negativeSlopes: [Double] = []
+        for index in 1..<recent.count {
+            let previous = recent[index - 1]
+            let current = recent[index]
+            if current.isResetPoint { continue }
+            let dt = current.timestamp.timeIntervalSince(previous.timestamp)
+            guard dt > 0 else { continue }
+            let slope = (current.remainingPercent - previous.remainingPercent) / dt
+            if slope < 0 {
+                negativeSlopes.append(slope)
+            }
+        }
+
+        let slopePerSecond: Double
+        if negativeSlopes.isEmpty {
+            slopePerSecond = 0
+        } else {
+            let mean = negativeSlopes.reduce(0, +) / Double(negativeSlopes.count)
+            let maxDropPerHour = -30.0 / 3600.0
+            slopePerSecond = max(mean, maxDropPerHour)
+        }
+
+        return PredictionModel(
+            anchorTimestamp: anchor.timestamp,
+            anchorRemaining: anchor.remainingPercent,
+            slopePerSecond: slopePerSecond
+        )
+    }
+
+    private func predictionHorizon(for range: UsageHistoryRange) -> TimeInterval {
+        switch range {
+        case .h1:
+            return 15 * 60
+        case .h5:
+            return 45 * 60
+        case .h12:
+            return 90 * 60
+        case .h24:
+            return 3 * 60 * 60
+        case .d7:
+            return 12 * 60 * 60
+        case .d30:
+            return 24 * 60 * 60
+        }
     }
 
     private func tooltipX(for x: CGFloat, width: CGFloat) -> CGFloat {
