@@ -556,7 +556,12 @@ private struct UsageHistoryGraphView: View {
                         }
 
                         if let hovered {
-                            let tooltipWidth = tooltipWidth(for: hovered.bar)
+                            let title = hoveredTitle(for: hovered.bar)
+                            let timestampText = tooltipTimeString(from: hovered.bar.timestamp)
+                            let tooltipWidth = min(
+                                tooltipWidth(forTitle: title, timestampText: timestampText),
+                                max(96, renderSize.width - 8)
+                            )
                             let tooltipHeight: CGFloat = 24
                             Path { path in
                                 path.move(to: CGPoint(x: hovered.x, y: 0))
@@ -565,8 +570,8 @@ private struct UsageHistoryGraphView: View {
                             .stroke(.secondary.opacity(0.5), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
 
                             GraphTooltipView(
-                                title: hoveredTitle(for: hovered.bar),
-                                timestamp: hovered.bar.timestamp
+                                title: title,
+                                timestampText: timestampText
                             )
                             .frame(width: tooltipWidth)
                             .position(
@@ -865,30 +870,30 @@ private struct UsageHistoryGraphView: View {
         return min(preferredY, maxY)
     }
 
-    private func tooltipWidth(for bar: RenderedBar) -> CGFloat {
-        switch bar.kind {
-        case .gap:
-            return 116
-        case .prediction:
-            return 150
-        case .actual where bar.isResetPoint:
-            return 172
-        default:
-            return 108
-        }
+    private func tooltipWidth(forTitle title: String, timestampText: String) -> CGFloat {
+        let titleWidth = CGFloat(title.count) * 6.6
+        let timeWidth = CGFloat(timestampText.count) * 5.8
+        let estimated = titleWidth + timeWidth + 36
+        return min(max(estimated, 108), 260)
+    }
+
+    private func tooltipTimeString(from date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMM d, HH:mm"
+        return formatter.string(from: date)
     }
 }
 
 private struct GraphTooltipView: View {
     let title: String
-    let timestamp: Date
+    let timestampText: String
 
     var body: some View {
         HStack(spacing: 6) {
             Text(title)
                 .font(.caption2.monospacedDigit())
                 .foregroundStyle(.primary)
-            Text(timeString(from: timestamp))
+            Text(timestampText)
                 .font(.caption2)
                 .foregroundStyle(.secondary)
         }
@@ -896,12 +901,6 @@ private struct GraphTooltipView: View {
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
         .background(.ultraThinMaterial, in: Capsule())
-    }
-
-    private func timeString(from date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "MMM d, HH:mm"
-        return formatter.string(from: date)
     }
 }
 
