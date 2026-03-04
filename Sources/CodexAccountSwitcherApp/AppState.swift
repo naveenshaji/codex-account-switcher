@@ -23,6 +23,7 @@ final class AppState {
 
     init() {
         loadProfiles()
+        syncCurrentAuthProfileIfAvailable()
         refreshOpenAtLoginState()
     }
 
@@ -220,6 +221,33 @@ final class AppState {
         } else {
             profiles.append(profile)
         }
+    }
+
+    private func syncCurrentAuthProfileIfAvailable() {
+        guard let current = try? authStore.importCurrentProfile() else {
+            return
+        }
+
+        if let index = profiles.firstIndex(where: { $0.accountID == current.accountID }) {
+            var existing = profiles[index]
+            existing.accessToken = current.accessToken
+            existing.refreshToken = current.refreshToken
+            existing.idToken = current.idToken
+            existing.planType = current.planType ?? existing.planType
+            existing.email = current.email ?? existing.email
+            if existing.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+               let email = current.email?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !email.isEmpty {
+                existing.name = email
+            }
+            profiles[index] = existing
+            activeProfileID = existing.id
+        } else {
+            profiles.append(current)
+            activeProfileID = current.id
+        }
+
+        saveProfiles()
     }
 
     private func reconcileActiveProfile(preferredProfileID: UUID? = nil) {
