@@ -441,6 +441,7 @@ private struct AccountUsageDetailView: View {
         ZStack {
             if isGraphMode {
                 UsageHistoryGraphView(points: history, range: historyRange)
+                    .padding(.bottom, -2)
                     .transition(.opacity)
             } else {
                 UsageBarsView(usage: usage)
@@ -485,8 +486,8 @@ private struct UsageHistoryGraphView: View {
                         let count = max(renderedBars.count, 1)
                         let step = size.width / CGFloat(count)
                         let barWidth = max(1, min(2, step * 0.55))
-                        let topPadding: CGFloat = 3
-                        let bottomPadding: CGFloat = 2
+                        let topPadding: CGFloat = 2
+                        let bottomPadding: CGFloat = 0
                         let drawableHeight = max(size.height - topPadding - bottomPadding, 1)
 
                         for (index, bar) in renderedBars.enumerated() {
