@@ -45,6 +45,9 @@ struct MenuContentView: View {
                 Spacer()
                 HStack(spacing: 10) {
                     if appState.isGraphMode {
+                        GraphMetricToggle(selection: $appState.selectedGraphMetric)
+                            .frame(width: 74)
+
                         Picker("Range", selection: $appState.selectedHistoryRange) {
                             ForEach(UsageHistoryRange.allCases) { range in
                                 Text(range.label).tag(range)
@@ -161,7 +164,7 @@ struct MenuContentView: View {
     private func profileMenuRow(_ profile: CodexAuthProfile) -> some View {
         let isActive = appState.activeProfileID == profile.id
         let usage = appState.usageByProfileID[profile.id]
-        let history = appState.historySeries(for: profile.id)
+        let history = appState.historySeries(for: profile.id, metric: appState.selectedGraphMetric)
         let plan = profile.planType?.trimmedNilIfEmpty ?? usage?.planType?.trimmedNilIfEmpty
 
         VStack(alignment: .leading, spacing: 6) {
@@ -373,6 +376,47 @@ private struct HoverIconButton: View {
     }
 }
 
+private struct GraphMetricToggle: View {
+    @Binding var selection: UsageGraphMetric
+    @State private var hoveredMetric: UsageGraphMetric?
+
+    var body: some View {
+        HStack(spacing: 2) {
+            ForEach(UsageGraphMetric.allCases) { metric in
+                Button {
+                    withAnimation(.easeInOut(duration: 0.15)) {
+                        selection = metric
+                    }
+                } label: {
+                    Text(metric.label)
+                        .font(.caption2.weight(selection == metric ? .semibold : .regular))
+                        .foregroundStyle(selection == metric ? .primary : .secondary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 3)
+                        .background(
+                            RoundedRectangle(cornerRadius: 4)
+                                .fill(
+                                    selection == metric
+                                    ? Color.secondary.opacity(0.24)
+                                    : (hoveredMetric == metric ? Color.secondary.opacity(0.12) : Color.clear)
+                                )
+                        )
+                }
+                .buttonStyle(.plain)
+                .onHover { isHovering in
+                    hoveredMetric = isHovering ? metric : nil
+                }
+            }
+        }
+        .padding(2)
+        .background(
+            RoundedRectangle(cornerRadius: 6)
+                .fill(Color.secondary.opacity(0.12))
+        )
+        .help("Graph metric")
+    }
+}
+
 private struct SubscriptionBadge: View {
     let plan: String
 
@@ -488,7 +532,7 @@ private struct UsageHistoryGraphView: View {
 
         return points.map { sample in
             let x = CGFloat(sample.timestamp.timeIntervalSince(minDate) / total) * width
-            let yRatio = CGFloat(min(max(sample.usedPercent, 0), 100) / 100)
+            let yRatio = CGFloat(min(max(sample.remainingPercent, 0), 100) / 100)
             let y = topPadding + (1 - yRatio) * drawableHeight
             return RenderedPoint(model: sample, point: CGPoint(x: x, y: y))
         }
@@ -510,7 +554,7 @@ private struct GraphTooltipView: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            Text("\(Int(point.usedPercent.rounded()))%")
+            Text("\(Int(point.remainingPercent.rounded()))%")
                 .font(.caption2.monospacedDigit())
                 .foregroundStyle(.primary)
             Text(timeString(from: point.timestamp))

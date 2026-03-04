@@ -23,6 +23,7 @@ final class AppState {
     var isAddingOAuthProfile = false
     var isGraphMode = false
     var selectedHistoryRange: UsageHistoryRange = .h24
+    var selectedGraphMetric: UsageGraphMetric = .fiveHour
     var openAtLoginEnabled = false
     var lastErrorMessage: String?
 
@@ -156,8 +157,13 @@ final class AppState {
         openAtLoginEnabled = launchAtLoginManager.isEnabled()
     }
 
-    func historySeries(for profileID: UUID, range: UsageHistoryRange? = nil) -> [UsageSeriesPoint] {
+    func historySeries(
+        for profileID: UUID,
+        range: UsageHistoryRange? = nil,
+        metric: UsageGraphMetric? = nil
+    ) -> [UsageSeriesPoint] {
         let selected = range ?? selectedHistoryRange
+        let selectedMetric = metric ?? selectedGraphMetric
         let points = (usageHistoryByProfileID[profileID] ?? []).sorted(by: { $0.timestamp < $1.timestamp })
         guard !points.isEmpty else { return [] }
 
@@ -165,17 +171,17 @@ final class AppState {
         let filtered = points.filter { $0.timestamp >= cutoff }
 
         return filtered.compactMap { point in
-            let value: Double?
-            if selected.prefersFiveHourWindow {
-                value = point.fiveHourUsedPercent ?? point.weeklyUsedPercent
+            let usedPercent: Double?
+            if selectedMetric == .fiveHour {
+                usedPercent = point.fiveHourUsedPercent ?? point.weeklyUsedPercent
             } else {
-                value = point.weeklyUsedPercent ?? point.fiveHourUsedPercent
+                usedPercent = point.weeklyUsedPercent ?? point.fiveHourUsedPercent
             }
 
-            guard let value else { return nil }
+            guard let usedPercent else { return nil }
             return UsageSeriesPoint(
                 timestamp: point.timestamp,
-                usedPercent: min(max(value, 0), 100)
+                remainingPercent: min(max(100 - usedPercent, 0), 100)
             )
         }
     }

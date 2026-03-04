@@ -96,9 +96,23 @@ struct UsageHistoryEnvelope: Codable {
 
 struct UsageSeriesPoint: Identifiable, Hashable {
     let timestamp: Date
-    let usedPercent: Double
+    let remainingPercent: Double
 
     var id: Date { timestamp }
+}
+
+enum UsageGraphMetric: String, CaseIterable, Codable, Identifiable {
+    case fiveHour
+    case weekly
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .fiveHour: return "5h"
+        case .weekly: return "7d"
+        }
+    }
 }
 
 enum UsageHistoryRange: String, CaseIterable, Codable, Identifiable {
@@ -133,14 +147,6 @@ enum UsageHistoryRange: String, CaseIterable, Codable, Identifiable {
         }
     }
 
-    var prefersFiveHourWindow: Bool {
-        switch self {
-        case .h1, .h5:
-            return true
-        default:
-            return false
-        }
-    }
 }
 
 extension CodexAuthProfile {
