@@ -241,10 +241,14 @@ final class AppState {
                 existing.name = email
             }
             profiles[index] = existing
-            activeProfileID = existing.id
+            if activeProfileID == nil {
+                activeProfileID = existing.id
+            }
         } else {
             profiles.append(current)
-            activeProfileID = current.id
+            if activeProfileID == nil {
+                activeProfileID = current.id
+            }
         }
 
         saveProfiles()
