@@ -44,6 +44,7 @@ final class AppState {
             let envelope = try profilesStore.load()
             profiles = envelope.profiles
             activeProfileID = envelope.activeProfileID
+            normalizeAndDedupeProfiles()
             reconcileActiveProfile()
         } catch {
             lastErrorMessage = "Failed to load profiles: \(error.localizedDescription)"
@@ -356,9 +357,16 @@ final class AppState {
         // Only replace when editing an existing saved profile by the same profile id.
         if let index = profiles.firstIndex(where: { $0.id == profile.id }) {
             profiles[index] = profile
-        } else {
-            profiles.append(profile)
+            return
         }
+
+        if let index = findMatchingProfileIndex(for: profile) {
+            let existing = profiles[index]
+            profiles[index] = mergeProfile(existing: existing, incoming: profile)
+            return
+        }
+
+        profiles.append(profile)
     }
 
     private func syncCurrentAuthProfileIfAvailable() {
@@ -366,7 +374,7 @@ final class AppState {
             return
         }
 
-        if let index = profiles.firstIndex(where: { $0.accountID == current.accountID }) {
+        if let index = findMatchingProfileIndex(for: current) {
             var existing = profiles[index]
             existing.accessToken = current.accessToken
             existing.refreshToken = current.refreshToken
@@ -420,13 +428,166 @@ final class AppState {
                 return
             }
 
-            if let byAccount = profiles.first(where: { $0.accountID == current.accountID }) {
-                activeProfileID = byAccount.id
+            if let identityMatch = profiles.first(where: { hasSameIdentity($0, current) }) {
+                activeProfileID = identityMatch.id
                 return
             }
         }
 
         // Final fallback: first profile is treated as active.
         activeProfileID = profiles.first?.id
+    }
+
+    private func normalizeAndDedupeProfiles() {
+        guard !profiles.isEmpty else { return }
+
+        var deduped: [CodexAuthProfile] = []
+        deduped.reserveCapacity(profiles.count)
+
+        var remappedActiveID = activeProfileID
+
+        for profile in profiles {
+            if let existingIndex = deduped.firstIndex(where: { hasSameIdentity($0, profile) }) {
+                let existing = deduped[existingIndex]
+                deduped[existingIndex] = mergeProfile(existing: existing, incoming: profile)
+                if remappedActiveID == profile.id {
+                    remappedActiveID = existing.id
+                }
+            } else {
+                deduped.append(profile)
+            }
+        }
+
+        if deduped != profiles {
+            profiles = deduped
+            activeProfileID = remappedActiveID
+            saveProfiles()
+        }
+    }
+
+    private func findMatchingProfileIndex(for profile: CodexAuthProfile) -> Int? {
+        profiles.firstIndex(where: { hasSameIdentity($0, profile) })
+    }
+
+    private func hasSameIdentity(_ lhs: CodexAuthProfile, _ rhs: CodexAuthProfile) -> Bool {
+        if let lhsIdentity = identityKey(for: lhs),
+           let rhsIdentity = identityKey(for: rhs),
+           lhsIdentity == rhsIdentity {
+            return true
+        }
+
+        if let lhsEmail = lhs.email?.trimmedNilIfEmpty?.lowercased(),
+           let rhsEmail = rhs.email?.trimmedNilIfEmpty?.lowercased(),
+           lhsEmail == rhsEmail {
+            return true
+        }
+
+        if let lhsRefresh = lhs.refreshToken?.trimmedNilIfEmpty,
+           let rhsRefresh = rhs.refreshToken?.trimmedNilIfEmpty,
+           lhsRefresh == rhsRefresh {
+            return true
+        }
+
+        if let lhsIDToken = lhs.idToken?.trimmedNilIfEmpty,
+           let rhsIDToken = rhs.idToken?.trimmedNilIfEmpty,
+           lhsIDToken == rhsIDToken {
+            return true
+        }
+
+        return lhs.accountID == rhs.accountID && lhs.accessToken == rhs.accessToken
+    }
+
+    private func identityKey(for profile: CodexAuthProfile) -> String? {
+        if let userID = extractUserIdentity(fromIDToken: profile.idToken) {
+            return "user:\(userID)"
+        }
+
+        if let email = profile.email?.trimmedNilIfEmpty?.lowercased() {
+            return "email:\(email)"
+        }
+
+        return nil
+    }
+
+    private func mergeProfile(existing: CodexAuthProfile, incoming: CodexAuthProfile) -> CodexAuthProfile {
+        var merged = existing
+
+        let incomingName = incoming.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !incomingName.isEmpty {
+            merged.name = incomingName
+        }
+
+        if let email = incoming.email?.trimmedNilIfEmpty {
+            merged.email = email
+        }
+
+        if let plan = incoming.planType?.trimmedNilIfEmpty {
+            merged.planType = plan
+        }
+
+        merged.accountID = incoming.accountID
+        merged.accessToken = incoming.accessToken
+        merged.refreshToken = incoming.refreshToken ?? merged.refreshToken
+        merged.idToken = incoming.idToken ?? merged.idToken
+
+        if let incomingLastUsed = incoming.lastUsedAt {
+            if let existingLastUsed = merged.lastUsedAt {
+                merged.lastUsedAt = max(existingLastUsed, incomingLastUsed)
+            } else {
+                merged.lastUsedAt = incomingLastUsed
+            }
+        }
+
+        return merged
+    }
+
+    private func extractUserIdentity(fromIDToken idToken: String?) -> String? {
+        guard
+            let idToken = idToken?.trimmedNilIfEmpty,
+            let payload = decodeJWTPayload(idToken)
+        else {
+            return nil
+        }
+
+        if let authNode = payload["https://api.openai.com/auth"] as? [String: Any] {
+            if let chatGPTUserID = authNode["chatgpt_user_id"] as? String,
+               let value = chatGPTUserID.trimmedNilIfEmpty?.lowercased() {
+                return value
+            }
+            if let userID = authNode["user_id"] as? String,
+               let value = userID.trimmedNilIfEmpty?.lowercased() {
+                return value
+            }
+        }
+
+        if let subject = payload["sub"] as? String,
+           let value = subject.trimmedNilIfEmpty?.lowercased() {
+            return value
+        }
+
+        return nil
+    }
+
+    private func decodeJWTPayload(_ token: String) -> [String: Any]? {
+        let segments = token.split(separator: ".")
+        guard segments.count >= 2 else { return nil }
+
+        var payload = String(segments[1])
+            .replacingOccurrences(of: "-", with: "+")
+            .replacingOccurrences(of: "_", with: "/")
+
+        let padding = payload.count % 4
+        if padding > 0 {
+            payload += String(repeating: "=", count: 4 - padding)
+        }
+
+        guard
+            let data = Data(base64Encoded: payload),
+            let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else {
+            return nil
+        }
+
+        return object
     }
 }
