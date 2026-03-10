@@ -18,9 +18,12 @@ Codex (desktop + CLI) reads auth from `~/.codex/auth.json`. This app keeps multi
   - weekly window
   - shown as `% remaining` (green -> yellow -> red as remaining drops)
 - Historical local usage graphs per account with selectable ranges (`1h`, `5h`, `12h`, `24h`, `7d`, `30d`).
+- First-run onboarding inside the menu bar panel.
+- Sparkle-based in-app update support for packaged builds.
 - Top-level menu actions include:
   - Add account via ChatGPT OAuth
   - Open automatically at startup (toggle row)
+  - automatic update toggles + manual update checks in packaged builds
 - Quick actions:
   - start/restart Codex desktop app (auto-adapts to running state)
   - open new Codex CLI terminal session
@@ -72,6 +75,12 @@ swift run CodexAccountSwitcherApp
 
 - Credentials are stored in a local user file with restrictive permissions (`600`).
 - Usage requests are made with account access tokens to official ChatGPT backend endpoints used by Codex.
+
+## Distribution model
+
+- Companion CLI: intended to be open source.
+- Packaged desktop app: intended to be distributed as proprietary software.
+- Sparkle updates require running the packaged `.app` build with bundle metadata and `SUFeedURL` configured.
 
 ## Current limitations
 

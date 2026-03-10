@@ -4,10 +4,11 @@ import Observation
 @main
 struct CodexAccountSwitcherApp: App {
     @State private var appState = AppState()
+    @State private var updaterManager = UpdaterManager()
 
     var body: some Scene {
         MenuBarExtra {
-            MenuContentView(appState: appState)
+            MenuContentView(appState: appState, updaterManager: updaterManager)
                 .frame(minWidth: 340)
                 .padding(.vertical, 8)
                 .task {
@@ -34,6 +35,7 @@ private struct MenuBarStatusIcon: View {
 
 struct MenuContentView: View {
     @Bindable var appState: AppState
+    @Bindable var updaterManager: UpdaterManager
     @State private var showRestartHint = false
     @State private var isCodexRunning = ProcessActions.isCodexDesktopRunning()
 
@@ -79,10 +81,29 @@ struct MenuContentView: View {
                 }
             }
 
+            if appState.shouldShowOnboarding {
+                FirstRunOnboardingCard(
+                    isAddingAccount: appState.isAddingOAuthProfile,
+                    onAddAccount: {
+                        Task {
+                            _ = await appState.addProfileViaOAuth()
+                        }
+                    },
+                    onDismiss: {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            appState.dismissOnboarding()
+                        }
+                    }
+                )
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+
             if appState.sortedProfiles.isEmpty {
-                Text("No saved accounts yet. Use Add Account below.")
-                    .foregroundStyle(.secondary)
-                    .font(.footnote)
+                if !appState.shouldShowOnboarding {
+                    Text("No saved accounts yet. Use Add Account below.")
+                        .foregroundStyle(.secondary)
+                        .font(.footnote)
+                }
             } else {
                 ForEach(appState.sortedProfiles) { profile in
                     profileMenuRow(profile)
@@ -120,6 +141,36 @@ struct MenuContentView: View {
                 ) {
                     appState.setOpenAtLoginEnabled(!appState.openAtLoginEnabled)
                 }
+
+                if updaterManager.isAvailable {
+                    Divider()
+                        .padding(.vertical, 6)
+
+                    MenuToggleRowButton(
+                        title: "Check for Updates Automatically",
+                        isOn: updaterManager.automaticallyChecksForUpdates
+                    ) {
+                        updaterManager.setAutomaticallyChecksForUpdates(!updaterManager.automaticallyChecksForUpdates)
+                    }
+
+                    if updaterManager.allowsAutomaticUpdates {
+                        MenuToggleRowButton(
+                            title: "Install Updates Automatically",
+                            isOn: updaterManager.automaticallyDownloadsUpdates,
+                            isDisabled: !updaterManager.automaticallyChecksForUpdates
+                        ) {
+                            updaterManager.setAutomaticallyDownloadsUpdates(!updaterManager.automaticallyDownloadsUpdates)
+                        }
+                    }
+
+                    MenuActionRowButton(
+                        title: "Check for Updates...",
+                        systemImage: "arrow.down.circle",
+                        isDisabled: !updaterManager.canCheckForUpdates
+                    ) {
+                        updaterManager.checkForUpdates()
+                    }
+                }
             }
 
             if showRestartHint {
@@ -143,6 +194,7 @@ struct MenuContentView: View {
         .onAppear {
             refreshCodexRunningState()
             appState.refreshOpenAtLoginState()
+            updaterManager.refreshState()
         }
         .onDisappear {
             showRestartHint = false
@@ -306,6 +358,7 @@ private struct MenuActionRowButton: View {
 private struct MenuToggleRowButton: View {
     let title: String
     let isOn: Bool
+    var isDisabled = false
     let action: () -> Void
     @State private var isHovered = false
 
@@ -315,10 +368,10 @@ private struct MenuToggleRowButton: View {
                 Image(systemName: isOn ? "checkmark" : "minus")
                     .font(.system(size: 11, weight: .semibold))
                     .frame(width: 14)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(isDisabled ? .tertiary : .secondary)
                 Text(title)
                     .font(.subheadline)
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(isDisabled ? .secondary : .primary)
                 Spacer()
             }
             .padding(.horizontal, 8)
@@ -326,11 +379,70 @@ private struct MenuToggleRowButton: View {
             .contentShape(Rectangle())
             .background(
                 RoundedRectangle(cornerRadius: 6)
-                    .fill(isHovered ? Color.secondary.opacity(0.14) : Color.clear)
+                    .fill((isHovered && !isDisabled) ? Color.secondary.opacity(0.14) : Color.clear)
             )
             .animation(.easeInOut(duration: 0.15), value: isHovered)
         }
         .buttonStyle(.plain)
+        .disabled(isDisabled)
+        .onHover { hovering in
+            isHovered = hovering
+        }
+    }
+}
+
+private struct FirstRunOnboardingCard: View {
+    let isAddingAccount: Bool
+    let onAddAccount: () -> Void
+    let onDismiss: () -> Void
+    @State private var isHovered = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Welcome")
+                .font(.subheadline.weight(.semibold))
+
+            Text("Add your accounts, switch the active one from the list, then restart Codex or open a new CLI session when you change accounts.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack(spacing: 8) {
+                Button(action: onAddAccount) {
+                    HStack(spacing: 6) {
+                        Image(systemName: isAddingAccount ? "hourglass" : "person.badge.plus")
+                            .font(.system(size: 11, weight: .semibold))
+                        Text(isAddingAccount ? "Connecting..." : "Add First Account")
+                            .font(.footnote.weight(.semibold))
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(
+                        RoundedRectangle(cornerRadius: 7)
+                            .fill(Color.accentColor.opacity(0.18))
+                    )
+                }
+                .buttonStyle(.plain)
+                .disabled(isAddingAccount)
+
+                Button("Skip") {
+                    onDismiss()
+                }
+                .buttonStyle(.plain)
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+            }
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(Color.secondary.opacity(isHovered ? 0.14 : 0.1))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(Color.secondary.opacity(0.14), lineWidth: 1)
+        )
+        .animation(.easeInOut(duration: 0.15), value: isHovered)
         .onHover { hovering in
             isHovered = hovering
         }

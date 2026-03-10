@@ -4,11 +4,16 @@ import Observation
 @MainActor
 @Observable
 final class AppState {
+    private enum DefaultsKey {
+        static let onboardingCompleted = "onboardingCompleted"
+    }
+
     private let profilesStore = ProfilesStore()
     private let authStore = CodexAuthStore()
     private let usageService = UsageService()
     private let usageHistoryStore = UsageHistoryStore()
     private let launchAtLoginManager = LaunchAtLoginManager()
+    private let defaults = UserDefaults.standard
     private var backgroundRefreshTask: Task<Void, Never>?
 
     var profiles: [CodexAuthProfile] = []
@@ -25,12 +30,14 @@ final class AppState {
     var selectedHistoryRange: UsageHistoryRange = .h24
     var selectedGraphMetric: UsageGraphMetric = .fiveHour
     var openAtLoginEnabled = false
+    var shouldShowOnboarding = false
     var lastErrorMessage: String?
 
     init() {
         loadProfiles()
         loadUsageHistory()
         syncCurrentAuthProfileIfAvailable()
+        configureOnboardingState()
         refreshOpenAtLoginState()
         startBackgroundRefreshLoop()
     }
@@ -63,12 +70,14 @@ final class AppState {
     func addProfile(_ profile: CodexAuthProfile) {
         appendProfile(profile)
         reconcileActiveProfile(preferredProfileID: profile.id)
+        completeOnboarding()
         saveProfiles()
     }
 
-    func addProfileViaOAuth() async {
+    @discardableResult
+    func addProfileViaOAuth() async -> Bool {
         if isAddingOAuthProfile {
-            return
+            return false
         }
 
         isAddingOAuthProfile = true
@@ -78,10 +87,13 @@ final class AppState {
             let oauthProfile = try await CodexOAuthService().addProfileViaChatGPTLogin()
             appendProfile(oauthProfile)
             reconcileActiveProfile(preferredProfileID: oauthProfile.id)
+            completeOnboarding()
             saveProfiles()
             await refreshUsageForAllProfiles()
+            return true
         } catch {
             lastErrorMessage = "OAuth add failed: \(error.localizedDescription)"
+            return false
         }
     }
 
@@ -138,6 +150,7 @@ final class AppState {
             let imported = try authStore.importCurrentProfile()
             appendProfile(imported)
             reconcileActiveProfile(preferredProfileID: imported.id)
+            completeOnboarding()
             saveProfiles()
         } catch {
             lastErrorMessage = "Failed to import current auth: \(error.localizedDescription)"
@@ -152,6 +165,10 @@ final class AppState {
         lastErrorMessage = nil
         usageErrorByProfileID.removeAll()
         actionErrorByProfileID.removeAll()
+    }
+
+    func dismissOnboarding() {
+        completeOnboarding()
     }
 
     func refreshOpenAtLoginState() {
@@ -398,6 +415,24 @@ final class AppState {
         }
 
         saveProfiles()
+    }
+
+    private func configureOnboardingState() {
+        if let storedValue = defaults.object(forKey: DefaultsKey.onboardingCompleted) as? Bool {
+            shouldShowOnboarding = !storedValue && profiles.isEmpty
+            return
+        }
+
+        if profiles.isEmpty {
+            shouldShowOnboarding = true
+        } else {
+            completeOnboarding()
+        }
+    }
+
+    private func completeOnboarding() {
+        defaults.set(true, forKey: DefaultsKey.onboardingCompleted)
+        shouldShowOnboarding = false
     }
 
     private func reconcileActiveProfile(preferredProfileID: UUID? = nil) {
