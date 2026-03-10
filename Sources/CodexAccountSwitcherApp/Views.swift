@@ -456,6 +456,7 @@ private struct AccountUsageDetailView: View {
 private struct UsageHistoryGraphView: View {
     let points: [UsageSeriesPoint]
     let range: UsageHistoryRange
+    @Environment(\.colorScheme) private var colorScheme
     @State private var hoverLocation: CGPoint?
     @State private var didInitialAutoScroll = false
 
@@ -791,7 +792,7 @@ private struct UsageHistoryGraphView: View {
         if bar.kind == .prediction {
             let predicted = "Predicted \(Int((bar.remainingPercent ?? 0).rounded()))%"
             if let predictedLimitDate = bar.predictedLimitDate,
-               let eta = shortEta(to: predictedLimitDate, from: bar.timestamp) {
+               let eta = shortEta(to: predictedLimitDate, from: Date()) {
                 return "\(predicted) • 0% in \(eta)"
             }
             return predicted
@@ -801,13 +802,24 @@ private struct UsageHistoryGraphView: View {
     }
 
     private func usageColor(forRemaining remaining: Double) -> Color {
+        if colorScheme == .dark {
+            switch remaining {
+            case ..<20:
+                return Color(red: 1.0, green: 0.33, blue: 0.33)
+            case ..<40:
+                return Color(red: 0.97, green: 0.79, blue: 0.20)
+            default:
+                return Color(red: 0.24, green: 0.86, blue: 0.46)
+            }
+        }
+
         switch remaining {
         case ..<20:
-            return .red
+            return Color(red: 0.78, green: 0.16, blue: 0.16)
         case ..<40:
-            return .yellow
+            return Color(red: 0.75, green: 0.52, blue: 0.02)
         default:
-            return .green
+            return Color(red: 0.08, green: 0.56, blue: 0.24)
         }
     }
 
