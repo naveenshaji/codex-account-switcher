@@ -11,7 +11,7 @@
     <key>CFBundleIconFile</key>
     <string>AppIcon</string>
     <key>CFBundleIdentifier</key>
-    <string>com.naveenshaji.codex-account-switcher</string>
+    <string>io.naveen.codex-account-switcher</string>
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleName</key>
@@ -39,7 +39,7 @@
     <key>SUEnableAutomaticChecks</key>
     <false/>
     <key>SUFeedURL</key>
-    <string>https://example.com/appcast.xml</string>
+    <string>https://raw.githubusercontent.com/naveenshaji/codex-account-switcher-releases/main/appcast.xml</string>
     <key>SUPublicEDKey</key>
     <string>REPLACE_WITH_ED25519_PUBLIC_KEY</string>
 </dict>

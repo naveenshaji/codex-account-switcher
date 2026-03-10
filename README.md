@@ -50,6 +50,8 @@ swift run CodexAccountSwitcherApp
   - Sparkle embedding + signing
   - notarization + stapling
   - appcast generation
+- Public release feed/assets are served from:
+  - `https://github.com/naveenshaji/codex-account-switcher-releases`
 - Release guide: `docs/releasing.md`
 
 Or build once:

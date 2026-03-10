@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APP_NAME="Codex Account Switcher"
 APP_EXECUTABLE="CodexAccountSwitcherApp"
-BUNDLE_ID="com.naveenshaji.codex-account-switcher"
+BUNDLE_ID="io.naveen.codex-account-switcher"
 MIN_SYSTEM_VERSION="14.0"
 OUTPUT_DIR="$ROOT_DIR/dist/release"
 VERSION=""
