@@ -101,6 +101,7 @@ require_tool swift
 require_tool ditto
 require_tool install_name_tool
 require_tool otool
+require_tool xattr
 require_tool /usr/libexec/PlistBuddy
 
 ICON_PATH="$ROOT_DIR/Resources/AppIcon.icns"
@@ -150,6 +151,9 @@ fi
 /usr/libexec/PlistBuddy -c "Set :SUFeedURL $APPCAST_URL" "$INFO_PLIST_PATH"
 /usr/libexec/PlistBuddy -c "Set :SUPublicEDKey $SPARKLE_PUBLIC_ED_KEY" "$INFO_PLIST_PATH"
 plutil -lint "$INFO_PLIST_PATH" >/dev/null
+
+log "Removing extended attributes before codesigning"
+xattr -cr "$APP_BUNDLE_PATH"
 
 if [[ $SIGN_APP -eq 1 && -n "$SIGNING_IDENTITY" ]]; then
   log "Codesigning Sparkle helpers and host app"

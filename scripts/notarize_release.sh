@@ -81,7 +81,7 @@ FINAL_ZIP="$OUTPUT_DIR/$APP_BASENAME-$VERSION.zip"
 
 log "Preparing notarization upload archive"
 rm -f "$SUBMISSION_ZIP" "$FINAL_ZIP"
-ditto -c -k --keepParent "$APP_PATH" "$SUBMISSION_ZIP"
+ditto -c -k --keepParent --norsrc --noextattr --noqtn --noacl "$APP_PATH" "$SUBMISSION_ZIP"
 
 NOTARY_ARGS=()
 if [[ -n "$NOTARY_KEYCHAIN_PROFILE" ]]; then
@@ -101,7 +101,7 @@ xcrun stapler validate "$APP_PATH"
 spctl --assess --type execute --verbose=4 "$APP_PATH"
 
 log "Creating final distributable zip"
-ditto -c -k --keepParent "$APP_PATH" "$FINAL_ZIP"
+ditto -c -k --keepParent --norsrc --noextattr --noqtn --noacl "$APP_PATH" "$FINAL_ZIP"
 shasum -a 256 "$FINAL_ZIP"
 
 log "Notarized zip ready at $FINAL_ZIP"
