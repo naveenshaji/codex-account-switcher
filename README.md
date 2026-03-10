@@ -43,6 +43,15 @@ cd codex-account-switcher
 swift run CodexAccountSwitcherApp
 ```
 
+## Release builds
+
+- Packaged releases now have a scriptable path for:
+  - universal `.app` assembly
+  - Sparkle embedding + signing
+  - notarization + stapling
+  - appcast generation
+- Release guide: `docs/releasing.md`
+
 Or build once:
 
 ```bash

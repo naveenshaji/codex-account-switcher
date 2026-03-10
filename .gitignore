@@ -1,6 +1,7 @@
 .build/
 .swiftpm/
 .DS_Store
+dist/
 
 # Growth OS must stay outside product repo
 growth_os/
