@@ -4,6 +4,7 @@ import Foundation
 enum CodexOAuthError: LocalizedError {
     case startFailed
     case codexBinaryNotFound
+    case appServerExited(status: Int32, details: String?)
     case loginStartFailed(String)
     case invalidLoginResponse
     case failedToOpenAuthURL
@@ -17,6 +18,11 @@ enum CodexOAuthError: LocalizedError {
             return "Failed to start codex app-server process."
         case .codexBinaryNotFound:
             return "Could not find the codex CLI binary. Install codex and make sure it is available at a standard path."
+        case .appServerExited(let status, let details):
+            if let details, !details.isEmpty {
+                return "Codex app-server exited with status \(status): \(details)"
+            }
+            return "Codex app-server exited with status \(status)."
         case .loginStartFailed(let message):
             return "Failed to start ChatGPT login: \(message)"
         case .invalidLoginResponse:
@@ -56,9 +62,10 @@ struct CodexOAuthService {
 
         let stdinPipe = Pipe()
         let stdoutPipe = Pipe()
+        let stderrPipe = Pipe()
         process.standardInput = stdinPipe
         process.standardOutput = stdoutPipe
-        process.standardError = Pipe()
+        process.standardError = stderrPipe
 
         do {
             try process.run()
@@ -78,33 +85,30 @@ struct CodexOAuthService {
             stdout: stdoutPipe.fileHandleForReading
         )
 
-        try await initialize(session: rpc)
-
-        let login = try await startLogin(session: rpc)
-
-        guard let authURL = URL(string: login.authURL), await MainActor.run(body: {
-            NSWorkspace.shared.open(authURL)
-        }) else {
-            throw CodexOAuthError.failedToOpenAuthURL
-        }
-
-        let authPath = codexHome.appendingPathComponent("auth.json", isDirectory: false)
         do {
+            try await initialize(session: rpc)
+
+            let login = try await startLogin(session: rpc)
+
+            guard let authURL = URL(string: login.authURL), await MainActor.run(body: {
+                NSWorkspace.shared.open(authURL)
+            }) else {
+                throw CodexOAuthError.failedToOpenAuthURL
+            }
+
             try await waitForLoginCompletion(session: rpc, expectedLoginID: login.loginID)
         } catch {
-            // Some app-server flows report timeout/cancel even though auth.json is eventually written.
-            if await waitForAuthFile(at: authPath, timeoutSeconds: 6),
-               let imported = try? CodexAuthStore().importProfile(fromAuthFileURL: authPath) {
+            if let imported = await recoverImportedProfile(from: codexHome, timeoutSeconds: 10) {
                 return imported
             }
-            throw error
+            throw buildDetailedError(from: error, process: process, stderrPipe: stderrPipe)
         }
 
-        guard await waitForAuthFile(at: authPath, timeoutSeconds: 8) else {
-            throw CodexOAuthError.authFileMissing
+        if let imported = await recoverImportedProfile(from: codexHome, timeoutSeconds: 8) {
+            return imported
         }
 
-        return try CodexAuthStore().importProfile(fromAuthFileURL: authPath)
+        throw CodexOAuthError.authFileMissing
     }
 
     private func makeTempCodexHome() throws -> URL {
@@ -263,6 +267,85 @@ struct CodexOAuthService {
             try? await Task.sleep(nanoseconds: 200_000_000)
         }
         return fileManager.fileExists(atPath: path.path)
+    }
+
+    private func recoverImportedProfile(from codexHome: URL, timeoutSeconds: TimeInterval) async -> CodexAuthProfile? {
+        let deadline = Date().addingTimeInterval(timeoutSeconds)
+
+        repeat {
+            for candidate in candidateAuthFilePaths(in: codexHome) {
+                if let imported = try? CodexAuthStore().importProfile(fromAuthFileURL: candidate) {
+                    return imported
+                }
+            }
+
+            try? await Task.sleep(nanoseconds: 250_000_000)
+        } while Date() < deadline
+
+        for candidate in candidateAuthFilePaths(in: codexHome) {
+            if let imported = try? CodexAuthStore().importProfile(fromAuthFileURL: candidate) {
+                return imported
+            }
+        }
+
+        return nil
+    }
+
+    private func candidateAuthFilePaths(in codexHome: URL) -> [URL] {
+        var candidates: [URL] = [
+            codexHome.appendingPathComponent("auth.json", isDirectory: false),
+            codexHome.appendingPathComponent(".codex/auth.json", isDirectory: false)
+        ]
+
+        if let enumerator = fileManager.enumerator(
+            at: codexHome,
+            includingPropertiesForKeys: [.isRegularFileKey],
+            options: [.skipsHiddenFiles]
+        ) {
+            for case let fileURL as URL in enumerator {
+                guard fileURL.lastPathComponent == "auth.json" else { continue }
+                candidates.append(fileURL)
+            }
+        }
+
+        var deduped: [URL] = []
+        var seen = Set<String>()
+        for candidate in candidates {
+            let path = candidate.path
+            if seen.insert(path).inserted, fileManager.fileExists(atPath: path) {
+                deduped.append(candidate)
+            }
+        }
+        return deduped
+    }
+
+    private func buildDetailedError(from error: Error, process: Process, stderrPipe: Pipe) -> Error {
+        guard !process.isRunning else {
+            return error
+        }
+
+        process.waitUntilExit()
+        let stderrData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
+        let stderrText = String(data: stderrData, encoding: .utf8)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmedNilIfEmpty
+
+        if let oauthError = error as? CodexOAuthError {
+            switch oauthError {
+            case .loginCanceled(let message) where message.localizedCaseInsensitiveContains("closed unexpectedly"):
+                return CodexOAuthError.appServerExited(status: process.terminationStatus, details: stderrText)
+            case .invalidLoginResponse:
+                return CodexOAuthError.appServerExited(status: process.terminationStatus, details: stderrText ?? "invalid login response")
+            default:
+                return error
+            }
+        }
+
+        if let stderrText {
+            return CodexOAuthError.appServerExited(status: process.terminationStatus, details: stderrText)
+        }
+
+        return error
     }
 }
 
