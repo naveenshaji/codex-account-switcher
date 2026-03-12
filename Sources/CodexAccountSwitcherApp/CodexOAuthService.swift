@@ -3,6 +3,7 @@ import Foundation
 
 enum CodexOAuthError: LocalizedError {
     case startFailed
+    case codexBinaryNotFound
     case loginStartFailed(String)
     case invalidLoginResponse
     case failedToOpenAuthURL
@@ -14,6 +15,8 @@ enum CodexOAuthError: LocalizedError {
         switch self {
         case .startFailed:
             return "Failed to start codex app-server process."
+        case .codexBinaryNotFound:
+            return "Could not find the codex CLI binary. Install codex and make sure it is available at a standard path."
         case .loginStartFailed(let message):
             return "Failed to start ChatGPT login: \(message)"
         case .invalidLoginResponse:
@@ -40,9 +43,8 @@ struct CodexOAuthService {
         }
 
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        process.executableURL = try resolveCodexExecutableURL()
         process.arguments = [
-            "codex",
             "app-server",
             "-c",
             "cli_auth_credentials_store=\"file\""
@@ -110,6 +112,80 @@ struct CodexOAuthService {
         let path = base.appendingPathComponent("codex-oauth-\(UUID().uuidString)", isDirectory: true)
         try fileManager.createDirectory(at: path, withIntermediateDirectories: true)
         return path
+    }
+
+    private func resolveCodexExecutableURL() throws -> URL {
+        for candidate in codexExecutableCandidates() {
+            if fileManager.isExecutableFile(atPath: candidate.path) {
+                return candidate
+            }
+        }
+
+        if let shellResolvedPath = resolveCodexPathViaLoginShell(),
+           fileManager.isExecutableFile(atPath: shellResolvedPath.path) {
+            return shellResolvedPath
+        }
+
+        throw CodexOAuthError.codexBinaryNotFound
+    }
+
+    private func codexExecutableCandidates() -> [URL] {
+        var candidates: [URL] = []
+
+        if let path = ProcessInfo.processInfo.environment["PATH"] {
+            for component in path.split(separator: ":") where !component.isEmpty {
+                candidates.append(URL(fileURLWithPath: String(component)).appendingPathComponent("codex"))
+            }
+        }
+
+        let commonPaths = [
+            "/usr/local/bin/codex",
+            "/opt/homebrew/bin/codex",
+            NSHomeDirectory() + "/.local/bin/codex"
+        ]
+
+        for path in commonPaths {
+            candidates.append(URL(fileURLWithPath: path))
+        }
+
+        var deduped: [URL] = []
+        var seen = Set<String>()
+        for candidate in candidates {
+            let path = candidate.path
+            if seen.insert(path).inserted {
+                deduped.append(candidate)
+            }
+        }
+        return deduped
+    }
+
+    private func resolveCodexPathViaLoginShell() -> URL? {
+        let shellPath = ProcessInfo.processInfo.environment["SHELL"]?.trimmedNilIfEmpty ?? "/bin/zsh"
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: shellPath)
+        process.arguments = ["-lc", "command -v codex"]
+
+        let stdout = Pipe()
+        process.standardOutput = stdout
+        process.standardError = Pipe()
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+        } catch {
+            return nil
+        }
+
+        guard process.terminationStatus == 0 else {
+            return nil
+        }
+
+        let data = stdout.fileHandleForReading.readDataToEndOfFile()
+        guard let output = String(data: data, encoding: .utf8)?.trimmedNilIfEmpty else {
+            return nil
+        }
+
+        return URL(fileURLWithPath: output)
     }
 
     private func initialize(session: JSONRPCSession) async throws {
