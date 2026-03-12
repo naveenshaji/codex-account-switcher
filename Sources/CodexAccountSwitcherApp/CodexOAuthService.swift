@@ -58,6 +58,9 @@ struct CodexOAuthService {
 
         var env = ProcessInfo.processInfo.environment
         env["CODEX_HOME"] = codexHome.path
+        if let resolvedPath = resolveLaunchPath() {
+            env["PATH"] = resolvedPath
+        }
         process.environment = env
 
         let stdinPipe = Pipe()
@@ -190,6 +193,35 @@ struct CodexOAuthService {
         }
 
         return URL(fileURLWithPath: output)
+    }
+
+    private func resolveLaunchPath() -> String? {
+        let currentPath = ProcessInfo.processInfo.environment["PATH"]?.trimmedNilIfEmpty
+        let shellPath = ProcessInfo.processInfo.environment["SHELL"]?.trimmedNilIfEmpty ?? "/bin/zsh"
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: shellPath)
+        process.arguments = ["-lc", "printenv PATH"]
+
+        let stdout = Pipe()
+        process.standardOutput = stdout
+        process.standardError = Pipe()
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+        } catch {
+            return currentPath
+        }
+
+        guard process.terminationStatus == 0 else {
+            return currentPath
+        }
+
+        let data = stdout.fileHandleForReading.readDataToEndOfFile()
+        let shellResolvedPath = String(data: data, encoding: .utf8)?.trimmedNilIfEmpty
+
+        return shellResolvedPath ?? currentPath
     }
 
     private func initialize(session: JSONRPCSession) async throws {
