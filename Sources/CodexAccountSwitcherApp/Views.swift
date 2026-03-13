@@ -171,6 +171,16 @@ struct MenuContentView: View {
                         updaterManager.checkForUpdates()
                     }
                 }
+
+                Divider()
+                    .padding(.vertical, 6)
+
+                MenuActionRowButton(
+                    title: "Quit",
+                    systemImage: "power"
+                ) {
+                    NSApplication.shared.terminate(nil)
+                }
             }
 
             if showRestartHint {
