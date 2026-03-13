@@ -275,14 +275,65 @@ struct MenuContentView: View {
             }
 
             if let usageError = appState.usageErrorByProfileID[profile.id] {
-                Text(usageError)
-                    .font(.caption2)
-                    .foregroundStyle(.red)
-                    .lineLimit(2)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(usageError)
+                        .font(.caption2)
+                        .foregroundStyle(.red)
+                        .lineLimit(2)
+
+                    if appState.reconnectRequiredProfileIDs.contains(profile.id) {
+                        InlineReconnectButton(
+                            isLoading: appState.reconnectingProfileIDs.contains(profile.id)
+                        ) {
+                            Task {
+                                _ = await appState.reconnectProfile(id: profile.id)
+                            }
+                        }
+                    }
+                }
             }
         }
         .padding(.vertical, 2)
         .animation(.easeInOut(duration: 0.2), value: isActive)
+    }
+}
+
+private struct InlineReconnectButton: View {
+    let isLoading: Bool
+    let action: () -> Void
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                if isLoading {
+                    ProgressView()
+                        .controlSize(.small)
+                        .scaleEffect(0.75)
+                        .frame(width: 10, height: 10)
+                } else {
+                    Image(systemName: "arrow.triangle.2.circlepath")
+                        .font(.system(size: 10, weight: .semibold))
+                        .frame(width: 10, height: 10)
+                }
+
+                Text(isLoading ? "Reconnecting..." : "Reconnect")
+                    .font(.caption2.weight(.semibold))
+            }
+            .foregroundStyle(isLoading ? .secondary : .primary)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(
+                RoundedRectangle(cornerRadius: 6)
+                    .fill((isHovered && !isLoading) ? Color.secondary.opacity(0.14) : Color.secondary.opacity(0.08))
+            )
+            .animation(.easeInOut(duration: 0.15), value: isHovered)
+        }
+        .buttonStyle(.plain)
+        .disabled(isLoading)
+        .onHover { hovering in
+            isHovered = hovering
+        }
     }
 }
 

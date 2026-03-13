@@ -22,6 +22,8 @@ final class AppState {
     var usageHistoryByProfileID: [UUID: [UsageHistoryPoint]] = [:]
     var usageErrorByProfileID: [UUID: String] = [:]
     var actionErrorByProfileID: [UUID: String] = [:]
+    var reconnectRequiredProfileIDs: Set<UUID> = []
+    var reconnectingProfileIDs: Set<UUID> = []
 
     var isRefreshingUsage = false
     var isSwitching = false
@@ -109,6 +111,8 @@ final class AppState {
         usageHistoryByProfileID[id] = nil
         usageErrorByProfileID[id] = nil
         actionErrorByProfileID[id] = nil
+        reconnectRequiredProfileIDs.remove(id)
+        reconnectingProfileIDs.remove(id)
 
         if activeProfileID == id {
             activeProfileID = profiles.first?.id
@@ -145,6 +149,45 @@ final class AppState {
         }
     }
 
+    @discardableResult
+    func reconnectProfile(id: UUID) async -> Bool {
+        guard let index = profiles.firstIndex(where: { $0.id == id }) else { return false }
+        if reconnectingProfileIDs.contains(id) {
+            return false
+        }
+
+        reconnectingProfileIDs.insert(id)
+        actionErrorByProfileID[id] = nil
+        defer { reconnectingProfileIDs.remove(id) }
+
+        let existing = profiles[index]
+
+        do {
+            let refreshed = try await CodexOAuthService().addProfileViaChatGPTLogin()
+            guard hasSameIdentity(existing, refreshed) else {
+                actionErrorByProfileID[id] = "Reconnect used a different account. Use Add Account for that login."
+                return false
+            }
+
+            var merged = mergeProfile(existing: existing, incoming: refreshed)
+            merged.lastUsedAt = existing.lastUsedAt
+            profiles[index] = merged
+            reconnectRequiredProfileIDs.remove(id)
+            usageErrorByProfileID[id] = nil
+
+            if activeProfileID == id {
+                try authStore.activate(profile: merged)
+            }
+
+            saveProfiles()
+            await refreshUsageForAllProfiles()
+            return true
+        } catch {
+            actionErrorByProfileID[id] = "Reconnect failed: \(error.localizedDescription)"
+            return false
+        }
+    }
+
     func importCurrentAuthAsProfile() {
         do {
             let imported = try authStore.importCurrentProfile()
@@ -165,6 +208,7 @@ final class AppState {
         lastErrorMessage = nil
         usageErrorByProfileID.removeAll()
         actionErrorByProfileID.removeAll()
+        reconnectRequiredProfileIDs.removeAll()
     }
 
     func dismissOnboarding() {
@@ -328,11 +372,19 @@ final class AppState {
                             historyChanged = applyUsageSnapshot(snapshot, toProfileID: profileID) || historyChanged
                             continue
                         case .failure(let retryError):
+                            if requiresReconnect(for: retryError) {
+                                reconnectRequiredProfileIDs.insert(profileID)
+                            }
                             usageErrorByProfileID[profileID] = usageErrorMessage(for: retryError, profile: refreshedProfile)
                             continue
                         }
                     }
 
+                    if requiresReconnect(for: error) {
+                        reconnectRequiredProfileIDs.insert(profileID)
+                    } else {
+                        reconnectRequiredProfileIDs.remove(profileID)
+                    }
                     usageErrorByProfileID[profileID] = usageErrorMessage(for: error, profile: currentProfile)
                 }
             }
@@ -370,6 +422,7 @@ final class AppState {
     private func applyUsageSnapshot(_ snapshot: UsageSnapshot, toProfileID profileID: UUID) -> Bool {
         usageByProfileID[profileID] = snapshot
         usageErrorByProfileID[profileID] = nil
+        reconnectRequiredProfileIDs.remove(profileID)
 
         if let idx = profiles.firstIndex(where: { $0.id == profileID }) {
             if let plan = snapshot.planType?.trimmedNilIfEmpty {
@@ -437,6 +490,20 @@ final class AppState {
         }
 
         return "Usage refresh failed: \(error.localizedDescription)"
+    }
+
+    private func requiresReconnect(for error: Error) -> Bool {
+        if let usageError = error as? UsageServiceError {
+            return usageError.isAuthenticationFailure
+        }
+
+        let message = error.localizedDescription.lowercased()
+        return message.contains("unauthorized")
+            || message.contains("forbidden")
+            || message.contains("expired")
+            || message.contains("auth")
+            || message.contains("login")
+            || message.contains("session")
     }
 
     private func isCancellationError(_ error: Error) -> Bool {
