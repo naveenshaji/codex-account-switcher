@@ -311,19 +311,29 @@ final class AppState {
             for await (profileID, result) in group {
                 switch result {
                 case .success(let snapshot):
-                    usageByProfileID[profileID] = snapshot
-                    usageErrorByProfileID[profileID] = nil
-                    if recordHistoryPoint(profileID: profileID, snapshot: snapshot) {
-                        historyChanged = true
-                    }
-                    if let idx = profiles.firstIndex(where: { $0.id == profileID }),
-                       profiles[idx].planType?.trimmedNilIfEmpty == nil {
-                        profiles[idx].planType = snapshot.planType
-                    }
+                    historyChanged = applyUsageSnapshot(snapshot, toProfileID: profileID) || historyChanged
                 case .failure(let error):
-                    if !isCancellationError(error) {
-                        usageErrorByProfileID[profileID] = "Usage refresh failed: \(error.localizedDescription)"
+                    if isCancellationError(error) {
+                        continue
                     }
+
+                    let currentProfile = profiles.first(where: { $0.id == profileID })
+
+                    if let currentProfile,
+                       shouldAttemptSilentRefresh(for: error, profile: currentProfile),
+                       let refreshedProfile = await silentlyRefreshProfile(currentProfile) {
+                        let retrySnapshot = await retryUsageFetch(afterRefreshing: refreshedProfile)
+                        switch retrySnapshot {
+                        case .success(let snapshot):
+                            historyChanged = applyUsageSnapshot(snapshot, toProfileID: profileID) || historyChanged
+                            continue
+                        case .failure(let retryError):
+                            usageErrorByProfileID[profileID] = usageErrorMessage(for: retryError, profile: refreshedProfile)
+                            continue
+                        }
+                    }
+
+                    usageErrorByProfileID[profileID] = usageErrorMessage(for: error, profile: currentProfile)
                 }
             }
         }
@@ -354,6 +364,79 @@ final class AppState {
         history.removeAll { $0.timestamp < cutoff }
         usageHistoryByProfileID[profileID] = history
         return true
+    }
+
+    @discardableResult
+    private func applyUsageSnapshot(_ snapshot: UsageSnapshot, toProfileID profileID: UUID) -> Bool {
+        usageByProfileID[profileID] = snapshot
+        usageErrorByProfileID[profileID] = nil
+
+        if let idx = profiles.firstIndex(where: { $0.id == profileID }) {
+            if let plan = snapshot.planType?.trimmedNilIfEmpty {
+                profiles[idx].planType = plan
+            }
+        }
+
+        return recordHistoryPoint(profileID: profileID, snapshot: snapshot)
+    }
+
+    private func retryUsageFetch(afterRefreshing profile: CodexAuthProfile) async -> Result<UsageSnapshot, Error> {
+        do {
+            let snapshot = try await usageService.fetchUsage(for: profile)
+            return .success(snapshot)
+        } catch {
+            return .failure(error)
+        }
+    }
+
+    private func shouldAttemptSilentRefresh(for error: Error, profile: CodexAuthProfile) -> Bool {
+        guard profile.refreshToken?.trimmedNilIfEmpty != nil else {
+            return false
+        }
+
+        if let usageError = error as? UsageServiceError {
+            return usageError.isAuthenticationFailure
+        }
+
+        let message = error.localizedDescription.lowercased()
+        return message.contains("unauthorized")
+            || message.contains("forbidden")
+            || message.contains("expired")
+            || message.contains("auth")
+            || message.contains("login")
+            || message.contains("session")
+    }
+
+    private func silentlyRefreshProfile(_ profile: CodexAuthProfile) async -> CodexAuthProfile? {
+        do {
+            let refreshed = try await CodexOAuthService().refreshProfileTokens(profile)
+            guard let index = profiles.firstIndex(where: { $0.id == profile.id }) else {
+                return refreshed
+            }
+
+            let merged = mergeProfile(existing: profiles[index], incoming: refreshed)
+            profiles[index] = merged
+
+            if activeProfileID == merged.id {
+                try? authStore.activate(profile: merged)
+            }
+
+            saveProfiles()
+            return merged
+        } catch {
+            return nil
+        }
+    }
+
+    private func usageErrorMessage(for error: Error, profile: CodexAuthProfile?) -> String {
+        if let usageError = error as? UsageServiceError, usageError.isAuthenticationFailure {
+            if profile?.refreshToken?.trimmedNilIfEmpty != nil {
+                return "Usage unavailable. Session refresh failed. Reconnect this account."
+            }
+            return "Usage unavailable. This account needs to be reconnected."
+        }
+
+        return "Usage refresh failed: \(error.localizedDescription)"
     }
 
     private func isCancellationError(_ error: Error) -> Bool {

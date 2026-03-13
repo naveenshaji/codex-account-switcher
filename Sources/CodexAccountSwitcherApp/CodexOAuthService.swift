@@ -5,6 +5,7 @@ enum CodexOAuthError: LocalizedError {
     case startFailed
     case codexBinaryNotFound
     case appServerExited(status: Int32, details: String?)
+    case accountRefreshFailed(String)
     case loginStartFailed(String)
     case invalidLoginResponse
     case failedToOpenAuthURL
@@ -23,6 +24,8 @@ enum CodexOAuthError: LocalizedError {
                 return "Codex app-server exited with status \(status): \(details)"
             }
             return "Codex app-server exited with status \(status)."
+        case .accountRefreshFailed(let message):
+            return "Token refresh failed: \(message)"
         case .loginStartFailed(let message):
             return "Failed to start ChatGPT login: \(message)"
         case .invalidLoginResponse:
@@ -41,6 +44,7 @@ enum CodexOAuthError: LocalizedError {
 
 struct CodexOAuthService {
     private let fileManager = FileManager.default
+    private let authStore = CodexAuthStore()
 
     func addProfileViaChatGPTLogin() async throws -> CodexAuthProfile {
         let codexHome = try makeTempCodexHome()
@@ -56,12 +60,7 @@ struct CodexOAuthService {
             "cli_auth_credentials_store=\"file\""
         ]
 
-        var env = ProcessInfo.processInfo.environment
-        env["CODEX_HOME"] = codexHome.path
-        if let resolvedPath = resolveLaunchPath() {
-            env["PATH"] = resolvedPath
-        }
-        process.environment = env
+        process.environment = resolvedEnvironment(codexHome: codexHome)
 
         let stdinPipe = Pipe()
         let stdoutPipe = Pipe()
@@ -108,6 +107,76 @@ struct CodexOAuthService {
         }
 
         if let imported = await recoverImportedProfile(from: codexHome, timeoutSeconds: 8) {
+            return imported
+        }
+
+        throw CodexOAuthError.authFileMissing
+    }
+
+    func refreshProfileTokens(_ profile: CodexAuthProfile) async throws -> CodexAuthProfile {
+        let codexHome = try makeTempCodexHome()
+        defer {
+            try? fileManager.removeItem(at: codexHome)
+        }
+
+        try authStore.write(
+            profile: profile,
+            toAuthFileURL: codexHome.appendingPathComponent("auth.json", isDirectory: false)
+        )
+
+        let process = Process()
+        process.executableURL = try resolveCodexExecutableURL()
+        process.arguments = [
+            "app-server",
+            "-c",
+            "cli_auth_credentials_store=\"file\""
+        ]
+        process.environment = resolvedEnvironment(codexHome: codexHome)
+
+        let stdinPipe = Pipe()
+        let stdoutPipe = Pipe()
+        let stderrPipe = Pipe()
+        process.standardInput = stdinPipe
+        process.standardOutput = stdoutPipe
+        process.standardError = stderrPipe
+
+        do {
+            try process.run()
+        } catch {
+            throw CodexOAuthError.startFailed
+        }
+
+        defer {
+            if process.isRunning {
+                process.terminate()
+                process.waitUntilExit()
+            }
+        }
+
+        let rpc = JSONRPCSession(
+            stdin: stdinPipe.fileHandleForWriting,
+            stdout: stdoutPipe.fileHandleForReading
+        )
+
+        do {
+            try await initialize(session: rpc)
+            let requestID = 2
+            try await rpc.sendRequest(id: requestID, method: "account/read", params: [
+                "refreshToken": true
+            ])
+            let response = try await rpc.waitForResponse(id: requestID, timeoutSeconds: 20)
+
+            if let errorMessage = extractErrorMessage(from: response) {
+                throw CodexOAuthError.accountRefreshFailed(errorMessage)
+            }
+        } catch {
+            if let imported = await recoverImportedProfile(from: codexHome, timeoutSeconds: 5) {
+                return imported
+            }
+            throw buildDetailedError(from: error, process: process, stderrPipe: stderrPipe)
+        }
+
+        if let imported = await recoverImportedProfile(from: codexHome, timeoutSeconds: 5) {
             return imported
         }
 
@@ -224,6 +293,15 @@ struct CodexOAuthService {
         return shellResolvedPath ?? currentPath
     }
 
+    private func resolvedEnvironment(codexHome: URL) -> [String: String] {
+        var env = ProcessInfo.processInfo.environment
+        env["CODEX_HOME"] = codexHome.path
+        if let resolvedPath = resolveLaunchPath() {
+            env["PATH"] = resolvedPath
+        }
+        return env
+    }
+
     private func initialize(session: JSONRPCSession) async throws {
         let initializeRequest: [String: Any] = [
             "clientInfo": [
@@ -260,6 +338,23 @@ struct CodexOAuthService {
         }
 
         return (flowID, authURL)
+    }
+
+    private func extractErrorMessage(from response: [String: Any]) -> String? {
+        guard let error = response["error"] as? [String: Any] else {
+            return nil
+        }
+
+        if let message = error["message"] as? String,
+           let trimmed = message.trimmedNilIfEmpty {
+            return trimmed
+        }
+
+        if let code = error["code"] {
+            return "app-server request failed (\(code))"
+        }
+
+        return "unknown app-server error"
     }
 
     private func waitForLoginCompletion(session: JSONRPCSession, expectedLoginID: String) async throws {

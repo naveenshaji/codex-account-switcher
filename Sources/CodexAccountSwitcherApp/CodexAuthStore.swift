@@ -44,6 +44,11 @@ struct CodexAuthStore {
     }
 
     func activate(profile: CodexAuthProfile) throws {
+        let authPath = try authFilePath()
+        try write(profile: profile, toAuthFileURL: authPath)
+    }
+
+    func write(profile: CodexAuthProfile, toAuthFileURL authPath: URL) throws {
         let auth = AuthJSON(
             authMode: "chatgpt",
             openAIAPIKey: nil,
@@ -60,7 +65,6 @@ struct CodexAuthStore {
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         let data = try encoder.encode(auth)
 
-        let authPath = try authFilePath()
         let codexDir = authPath.deletingLastPathComponent()
         try fileManager.createDirectory(at: codexDir, withIntermediateDirectories: true)
 

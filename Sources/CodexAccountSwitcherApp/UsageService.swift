@@ -1,12 +1,55 @@
 import Foundation
 
+enum UsageServiceError: LocalizedError {
+    case invalidUsageURL
+    case invalidResponse
+    case httpStatus(code: Int, body: String?)
+
+    var errorDescription: String? {
+        switch self {
+        case .invalidUsageURL:
+            return "Usage endpoint URL is invalid."
+        case .invalidResponse:
+            return "Usage endpoint returned an invalid response."
+        case .httpStatus(let code, let body):
+            if let body, !body.isEmpty {
+                return "Usage request failed (\(code)): \(body)"
+            }
+            return "Usage request failed (\(code))."
+        }
+    }
+
+    var isAuthenticationFailure: Bool {
+        switch self {
+        case .httpStatus(let code, let body):
+            if code == 401 || code == 403 {
+                return true
+            }
+
+            guard let body = body?.lowercased() else {
+                return false
+            }
+
+            return body.contains("unauthorized")
+                || body.contains("forbidden")
+                || body.contains("expired")
+                || body.contains("invalid_token")
+                || body.contains("login")
+                || body.contains("auth")
+                || body.contains("session")
+        case .invalidUsageURL, .invalidResponse:
+            return false
+        }
+    }
+}
+
 struct UsageService: Sendable {
     private let session: URLSession = .shared
 
     func fetchUsage(for profile: CodexAuthProfile, baseURL: String = "https://chatgpt.com/backend-api") async throws -> UsageSnapshot {
         let normalizedBase = baseURL.hasSuffix("/") ? String(baseURL.dropLast()) : baseURL
         guard let url = URL(string: "\(normalizedBase)/wham/usage") else {
-            throw URLError(.badURL)
+            throw UsageServiceError.invalidUsageURL
         }
 
         var request = URLRequest(url: url)
@@ -17,8 +60,15 @@ struct UsageService: Sendable {
         request.timeoutInterval = 20
 
         let (data, response) = try await session.data(for: request)
-        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-            throw URLError(.badServerResponse)
+        guard let http = response as? HTTPURLResponse else {
+            throw UsageServiceError.invalidResponse
+        }
+
+        guard (200..<300).contains(http.statusCode) else {
+            let body = String(data: data, encoding: .utf8)?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .trimmedNilIfEmpty
+            throw UsageServiceError.httpStatus(code: http.statusCode, body: body)
         }
 
         let decoder = JSONDecoder()
