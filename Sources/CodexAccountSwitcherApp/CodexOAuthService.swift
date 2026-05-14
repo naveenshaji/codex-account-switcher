@@ -53,14 +53,15 @@ struct CodexOAuthService {
         }
 
         let process = Process()
-        process.executableURL = try resolveCodexExecutableURL()
+        let codexExecutable = try resolveCodexExecutable()
+        process.executableURL = codexExecutable.url
         process.arguments = [
             "app-server",
             "-c",
             "cli_auth_credentials_store=\"file\""
         ]
 
-        process.environment = resolvedEnvironment(codexHome: codexHome)
+        process.environment = resolvedEnvironment(codexHome: codexHome, codexExecutable: codexExecutable)
 
         let stdinPipe = Pipe()
         let stdoutPipe = Pipe()
@@ -125,13 +126,14 @@ struct CodexOAuthService {
         )
 
         let process = Process()
-        process.executableURL = try resolveCodexExecutableURL()
+        let codexExecutable = try resolveCodexExecutable()
+        process.executableURL = codexExecutable.url
         process.arguments = [
             "app-server",
             "-c",
             "cli_auth_credentials_store=\"file\""
         ]
-        process.environment = resolvedEnvironment(codexHome: codexHome)
+        process.environment = resolvedEnvironment(codexHome: codexHome, codexExecutable: codexExecutable)
 
         let stdinPipe = Pipe()
         let stdoutPipe = Pipe()
@@ -190,16 +192,16 @@ struct CodexOAuthService {
         return path
     }
 
-    private func resolveCodexExecutableURL() throws -> URL {
+    private func resolveCodexExecutable() throws -> CodexExecutable {
         for candidate in codexExecutableCandidates() {
             if fileManager.isExecutableFile(atPath: candidate.path) {
-                return candidate
+                return CodexExecutable(url: candidate)
             }
         }
 
         if let shellResolvedPath = resolveCodexPathViaLoginShell(),
            fileManager.isExecutableFile(atPath: shellResolvedPath.path) {
-            return shellResolvedPath
+            return CodexExecutable(url: shellResolvedPath)
         }
 
         throw CodexOAuthError.codexBinaryNotFound
@@ -224,6 +226,8 @@ struct CodexOAuthService {
             candidates.append(URL(fileURLWithPath: path))
         }
 
+        candidates.append(contentsOf: nvmCodexExecutableCandidates())
+
         var deduped: [URL] = []
         var seen = Set<String>()
         for candidate in candidates {
@@ -233,6 +237,117 @@ struct CodexOAuthService {
             }
         }
         return deduped
+    }
+
+    private func nvmCodexExecutableCandidates() -> [URL] {
+        nvmDirectories().flatMap { nvmDirectory in
+            let versionsDirectory = nvmDirectory.appendingPathComponent("versions/node", isDirectory: true)
+            let defaultCandidates = defaultNVMNodeVersionCandidates(in: nvmDirectory, versionsDirectory: versionsDirectory)
+            let installedCandidates = installedNVMNodeVersionDirectories(in: versionsDirectory)
+
+            return dedupeURLs(defaultCandidates + installedCandidates).map {
+                $0.appendingPathComponent("bin/codex", isDirectory: false)
+            }
+        }
+    }
+
+    private func nvmDirectories() -> [URL] {
+        var directories: [URL] = []
+
+        if let nvmDir = ProcessInfo.processInfo.environment["NVM_DIR"]?.trimmedNilIfEmpty {
+            directories.append(URL(fileURLWithPath: nvmDir, isDirectory: true))
+        }
+
+        directories.append(URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true).appendingPathComponent(".nvm", isDirectory: true))
+
+        return dedupeURLs(directories)
+    }
+
+    private func defaultNVMNodeVersionCandidates(in nvmDirectory: URL, versionsDirectory: URL) -> [URL] {
+        guard let defaultVersion = readNVMAlias("default", in: nvmDirectory) else {
+            return []
+        }
+
+        return nvmNodeVersionCandidates(
+            matching: defaultVersion,
+            in: nvmDirectory,
+            versionsDirectory: versionsDirectory,
+            visitedAliases: ["default"]
+        )
+    }
+
+    private func nvmNodeVersionCandidates(
+        matching specifier: String,
+        in nvmDirectory: URL,
+        versionsDirectory: URL,
+        visitedAliases: Set<String>
+    ) -> [URL] {
+        if specifier == "node" || specifier.hasPrefix("stable") {
+            return Array(installedNVMNodeVersionDirectories(in: versionsDirectory).prefix(1))
+        }
+
+        if specifier.hasPrefix("v") {
+            return [versionsDirectory.appendingPathComponent(specifier, isDirectory: true)]
+        }
+
+        if specifier.first?.isNumber == true {
+            return Array(installedNVMNodeVersionDirectories(in: versionsDirectory).filter { url in
+                let version = String(url.lastPathComponent.dropFirst())
+                return version == specifier || version.hasPrefix("\(specifier).")
+            }.prefix(1))
+        }
+
+        if !visitedAliases.contains(specifier),
+           let aliasValue = readNVMAlias(specifier, in: nvmDirectory) {
+            var nextVisitedAliases = visitedAliases
+            nextVisitedAliases.insert(specifier)
+            let resolved = nvmNodeVersionCandidates(
+                matching: aliasValue,
+                in: nvmDirectory,
+                versionsDirectory: versionsDirectory,
+                visitedAliases: nextVisitedAliases
+            )
+            if !resolved.isEmpty {
+                return resolved
+            }
+        }
+
+        return []
+    }
+
+    private func readNVMAlias(_ alias: String, in nvmDirectory: URL) -> String? {
+        let aliasURL = nvmDirectory.appendingPathComponent("alias", isDirectory: true)
+            .appendingPathComponent(alias, isDirectory: false)
+
+        guard let rawValue = try? String(contentsOf: aliasURL, encoding: .utf8),
+              let value = rawValue.split(whereSeparator: \.isWhitespace).first else {
+            return nil
+        }
+
+        return String(value)
+    }
+
+    private func installedNVMNodeVersionDirectories(in versionsDirectory: URL) -> [URL] {
+        guard let contents = try? fileManager.contentsOfDirectory(
+            at: versionsDirectory,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles]
+        ) else {
+            return []
+        }
+
+        return contents
+            .filter { url in
+                guard url.lastPathComponent.hasPrefix("v") else {
+                    return false
+                }
+
+                var isDirectory: ObjCBool = false
+                return fileManager.fileExists(atPath: url.path, isDirectory: &isDirectory) && isDirectory.boolValue
+            }
+            .sorted { lhs, rhs in
+                compareNodeVersions(lhs.lastPathComponent, rhs.lastPathComponent) == .orderedDescending
+            }
     }
 
     private func resolveCodexPathViaLoginShell() -> URL? {
@@ -293,12 +408,13 @@ struct CodexOAuthService {
         return shellResolvedPath ?? currentPath
     }
 
-    private func resolvedEnvironment(codexHome: URL) -> [String: String] {
+    private func resolvedEnvironment(codexHome: URL, codexExecutable: CodexExecutable) -> [String: String] {
         var env = ProcessInfo.processInfo.environment
         env["CODEX_HOME"] = codexHome.path
-        if let resolvedPath = resolveLaunchPath() {
-            env["PATH"] = resolvedPath
-        }
+        env["PATH"] = mergedPath(
+            prepending: [codexExecutable.binDirectory],
+            basePath: resolveLaunchPath()
+        )
         return env
     }
 
@@ -473,6 +589,71 @@ struct CodexOAuthService {
         }
 
         return error
+    }
+
+    private func mergedPath(prepending directories: [URL], basePath: String?) -> String {
+        var components = directories.map(\.path)
+
+        if let basePath {
+            components.append(contentsOf: basePath.split(separator: ":").map(String.init))
+        }
+
+        var deduped: [String] = []
+        var seen = Set<String>()
+        for component in components where !component.isEmpty {
+            if seen.insert(component).inserted {
+                deduped.append(component)
+            }
+        }
+
+        return deduped.joined(separator: ":")
+    }
+
+    private func dedupeURLs(_ urls: [URL]) -> [URL] {
+        var deduped: [URL] = []
+        var seen = Set<String>()
+        for url in urls {
+            if seen.insert(url.standardizedFileURL.path).inserted {
+                deduped.append(url)
+            }
+        }
+        return deduped
+    }
+
+    private func compareNodeVersions(_ lhs: String, _ rhs: String) -> ComparisonResult {
+        let lhsParts = nodeVersionParts(lhs)
+        let rhsParts = nodeVersionParts(rhs)
+        let maxCount = max(lhsParts.count, rhsParts.count)
+
+        for index in 0..<maxCount {
+            let lhsPart = index < lhsParts.count ? lhsParts[index] : 0
+            let rhsPart = index < rhsParts.count ? rhsParts[index] : 0
+
+            if lhsPart > rhsPart {
+                return .orderedDescending
+            }
+
+            if lhsPart < rhsPart {
+                return .orderedAscending
+            }
+        }
+
+        return .orderedSame
+    }
+
+    private func nodeVersionParts(_ version: String) -> [Int] {
+        version
+            .trimmingCharacters(in: CharacterSet(charactersIn: "v"))
+            .split(separator: ".")
+            .map { Int($0) ?? 0 }
+    }
+}
+
+private struct CodexExecutable {
+    let url: URL
+
+    var binDirectory: URL {
+        url.deletingLastPathComponent()
     }
 }
 

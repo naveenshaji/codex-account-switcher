@@ -32,7 +32,7 @@ Codex (desktop + CLI) reads auth from `~/.codex/auth.json`. This app keeps multi
 
 - macOS 14+
 - Swift 6 toolchain (Xcode 15+ is sufficient)
-- `codex` CLI installed and available on `PATH`
+- `codex` CLI installed and available on `PATH`, in a standard Homebrew/local path, or through `nvm`
 - A ChatGPT account that can authenticate through Codex OAuth
 
 ## Quick start
